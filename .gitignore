@@ -1,0 +1,33 @@
+# ════════════════════════════════════════════
+# .gitignore - SIEM Inteligente (Tesis)
+# ════════════════════════════════════════════
+
+# 1. Entornos y Credenciales (¡CRÍTICO PARA LA SEGURIDAD!)
+.env
+n8n_data/
+
+# 2. Logs y Registros Locales (Basura de ejecución)
+*.log
+motor_ml.log
+n8nEventLog*.log
+
+# 3. Caché y archivos compilados de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 4. Archivos temporales de bases de datos locales
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# 5. Archivos ocultos del Sistema Operativo
+.DS_Store
+Thumbs.db
+
+# 6. Gráficos generados localmente por el análisis estadístico
+figura1_boxplot_mttr.png
+figura2_histograma_mttd.png
+scripts_ml/figura1_boxplot_mttr.png
+scripts_ml/figura2_histograma_mttd.png

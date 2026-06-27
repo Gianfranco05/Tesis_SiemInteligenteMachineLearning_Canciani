@@ -1,0 +1,21 @@
+# requirements.txt — Dependencias del Motor ML
+# SIEM Inteligente | UTN FRM | Gianfranco Canciani
+#
+# Instalación:
+#   pip install -r requirements.txt
+#
+# Desde el contenedor Docker:
+#   docker exec -it siem_ml pip install -r /app/requirements.txt
+
+# Motor de Machine Learning
+scikit-learn>=1.3.0
+
+# Cliente de Elasticsearch
+elasticsearch>=8.0.0,<9.0.0
+
+# Manejo de datos y features
+pandas>=2.0.0
+numpy>=1.24.0
+
+# HTTP para webhooks a n8n
+requests>=2.31.0

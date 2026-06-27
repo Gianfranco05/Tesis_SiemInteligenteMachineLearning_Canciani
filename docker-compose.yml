@@ -1,0 +1,142 @@
+version: '3.8'
+
+# ══════════════════════════════════════════════════════════
+# SIEM Inteligente con Machine Learning
+# UTN FRM | Gianfranco Canciani
+#
+# CAMBIOS respecto a la versión original:
+#   1. Se agregaron volumes persistentes para ES, Postgres y Grafana
+#      (antes se perdía todo al reiniciar los contenedores)
+#   2. Se corrigió el bug de indentación de victima_ssh
+#      (estaba fuera del bloque services:)
+#   3. Se agregó restart: unless-stopped a los servicios críticos
+#
+# CREDENCIALES: todas las variables sensibles se leen del archivo .env
+# (ver .env.example para la plantilla). El .env está en .gitignore.
+# ══════════════════════════════════════════════════════════
+
+services:
+
+  # ── 1. ELASTICSEARCH — Motor de búsqueda e indexación de logs ──
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
+    container_name: siem_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      # NUEVO: volumen persistente — los logs no se pierden al reiniciar
+      - es_data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+
+  # ── 2. LOGSTASH — Ingesta, parsing y normalización de logs ──
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.1
+    container_name: siem_logstash
+    ports:
+      - "5044:5044"
+    volumes:
+      - ./config_logstash:/usr/share/logstash/pipeline
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  # ── 3. SYSLOG-NG — Recolector de eventos de red ──
+  syslog-ng:
+    image: lscr.io/linuxserver/syslog-ng:latest
+    container_name: siem_syslog
+    ports:
+      - "514:514/udp"
+      - "601:601/tcp"
+    restart: unless-stopped
+
+  # ── 4. N8N — Orquestador SOAR ──
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: siem_n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL}
+      - N8N_PROTOCOL=http
+      - NODE_TLS_REJECT_UNAUTHORIZED=0
+    depends_on:
+      - postgres
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+    restart: unless-stopped
+
+  # ── 5. GRAFANA — Dashboards de visualización táctica ──
+  grafana:
+    image: grafana/grafana:latest
+    container_name: siem_grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - elasticsearch
+    volumes:
+      # NUEVO: volumen persistente — los dashboards no se pierden al reiniciar
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+
+ # ── 6. POSTGRESQL — Auditoría inmutable e historial de incidentes ──
+  postgres:
+    image: postgres:15
+    container_name: siem_postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      # Volumen persistente — el historial de alertas no se pierde al reiniciar
+      - pg_data:/var/lib/postgresql/data
+      # Script de inicialización — crea todas las tablas automáticamente
+      # al levantar el contenedor por primera vez con volumen vacío
+      - ./init_db:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+
+  # ── 7. ML-PYTHON — Contenedor para el motor de Machine Learning ──
+  ml-python:
+    image: python:3.10-slim
+    container_name: siem_ml
+    environment:
+      - LOOP_SECONDS=5
+      - VENTANA_MIN=30
+    # tail -f /dev/null mantiene el contenedor activo para entrar con docker exec
+    # Para correr el motor en loop automático, cambiar por:
+    #   command: sh -c "pip install -r /app/requirements.txt -q && python /app/motor_ml.py --loop"
+    command: tail -f /dev/null
+    volumes:
+      - ./scripts_ml:/app
+    restart: unless-stopped
+
+  # ── 8. VICTIMA SSH — Servidor de pruebas para RU-1 ──
+  # CORRECCIÓN: estaba fuera del bloque services: (bug de indentación en v1)
+  victima_ssh:
+    image: lscr.io/linuxserver/openssh-server:latest
+    container_name: victima_ssh
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - USER_NAME=${SSH_USER}
+      - USER_PASSWORD=${SSH_PASSWORD}
+      - PASSWORD_ACCESS=true
+      - SUDO_ACCESS=true             # Necesario para ejecutar iptables
+    ports:
+      - "2222:2222"
+    restart: unless-stopped
+
+# ══════════════════════════════════════════════════════════
+# VOLÚMENES NOMBRADOS — Datos persistentes entre reinicios
+# NUEVO en esta versión: antes no existían y los datos se perdían
+# ══════════════════════════════════════════════════════════
+volumes:
+  es_data:       # Índices de Elasticsearch (logs)
+  pg_data:       # Base de datos PostgreSQL (auditoría)
+  grafana_data:  # Configuración y dashboards de Grafana
