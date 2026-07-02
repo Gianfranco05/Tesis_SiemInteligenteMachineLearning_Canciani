@@ -1,0 +1,193 @@
+{
+  "name": "ru-2",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c4105423-730c-4080-905d-5a8a925cc365",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "url": "http://elasticsearch:9200/eventos-seguridad-*/_search?q=\"EXITOSO\"",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "445b1377-9fa5-4356-be59-d45564c8802c",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f82ff226-15c4-4f53-b61a-33e5c4ad5c3f",
+              "leftValue": "={{DateTime.fromISO($json.hits.hits[0]._source[\"@timestamp\"]).hour}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "ddc0032b-a550-44dc-8b53-6df1b4d3647f",
+              "leftValue": "={{DateTime.fromISO($json.hits.hits[0]._source[\"@timestamp\"]).hour}}",
+              "rightValue": 6,
+              "operator": {
+                "type": "number",
+                "operation": "lte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "0ead3dfc-6609-44d3-9863-b2940748ec86",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "alertas_accesos_nocturnos",
+          "mode": "list",
+          "cachedResultName": "alertas_accesos_nocturnos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "detalle": "¡Alerta RU-2! Se detectó un inicio de sesión exitoso fuera del horario laboral."
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "detalle",
+              "displayName": "detalle",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        624,
+        -96
+      ],
+      "id": "f77d8dcd-b421-410a-89f2-1b1ef77040ed",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "hvF0mMMeucd1yw23",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "b7f83e78-4c9a-44a4-9550-0bdc64b7c2d0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6b5e1c5781d3b16dcb65865042865873e1ca87b5c934bbbd4ea1a3cb59b04685"
+  },
+  "id": "WGugQMzjzTjEvgE2",
+  "tags": []
+}

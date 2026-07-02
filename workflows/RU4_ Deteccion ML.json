@@ -1,0 +1,334 @@
+{
+  "name": "RU4: Deteccion ML",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "alerta-ml",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -144,
+        48
+      ],
+      "id": "9dcaf6d9-0780-42eb-be04-cc6261284e5c",
+      "name": "Webhook",
+      "webhookId": "fd2b15c2-84da-4981-a5f6-3ea5864eb34d"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "alertas_ml",
+          "mode": "list",
+          "cachedResultName": "alertas_ml"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "score_riesgo": "={{ $json.body.score_riesgo }}",
+            "algoritmo": "={{ $json.body.algoritmo }}",
+            "ip_origen": "={{ $json.body.ip_origen }}",
+            "accion": "={{ $json.body.accion }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "algoritmo",
+              "displayName": "algoritmo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ip_origen",
+              "displayName": "ip_origen",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "score_riesgo",
+              "displayName": "score_riesgo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "accion",
+              "displayName": "accion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        64,
+        48
+      ],
+      "id": "1835c9d0-72ec-41aa-a737-c7bccaca7fae",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "hvF0mMMeucd1yw23",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "7447493101",
+        "text": "=🚨 <b>ALERTA DE SEGURIDAD - IA</b> 🚨\n\n<b>Motor Matemático:</b> {{ $json.algoritmo }}\n<b>IP Atacante:</b> {{ $json.ip_origen }}\n<b>Nivel de Riesgo:</b> {{ $json.score_riesgo }}\n<b>Respuesta Automática:</b> {{ $json.accion }}\n\n🌐 <b>Inteligencia OSINT (AbuseIPDB):</b>\n- País de Origen: {{ $json.pais }}\n- Score de Abuso: {{ $json.abuso_score }}/100\n- Veces Reportada: {{ $json.total_reportes }}\n- ISP: {{ $json.isp }}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "🛑 Bloquear IP",
+                    "additionalFields": {
+                      "callback_data": "=bloquear_{{ $json.ip_origen }}"
+                    }
+                  },
+                  {
+                    "text": "✅ Ignorar",
+                    "additionalFields": {
+                      "callback_data": "ignorar"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        736,
+        48
+      ],
+      "id": "f5530709-4f6a-4a08-ace5-33d3f32480e7",
+      "name": "Send a text message",
+      "webhookId": "53b65f97-6c57-401f-a2e8-e99a470e239f",
+      "credentials": {
+        "telegramApi": {
+          "id": "ueALl70pnW6cEnaT",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.abuseipdb.com/api/v2/check",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "ipAddress",
+              "value": "={{ $('Webhook').item.json.body.ip_origen }}"
+            },
+            {
+              "name": "maxAgeInDays",
+              "value": "90"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Key",
+              "value": "9723e84808b6756439933ea6d8bd9e35c10352ad0ad377eee14e93a474568a367a4d65c451c12d20"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        272,
+        48
+      ],
+      "id": "3f35dfea-2775-4928-8823-790f3f02a4ed",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "148ba9aa-acff-470f-9506-404616157916",
+              "name": "ip_origen",
+              "value": "={{ $('Webhook').item.json.body.ip_origen }}",
+              "type": "string"
+            },
+            {
+              "id": "5666b440-4c71-4ee8-9a88-826d6757470f",
+              "name": "algoritmo",
+              "value": "={{ $('Webhook').item.json.body.algoritmo }}",
+              "type": "string"
+            },
+            {
+              "id": "6dfd74d5-2b47-471c-b529-9b72f7ea775a",
+              "name": "score_riesgo",
+              "value": "={{ $('Webhook').item.json.body.score_riesgo }}",
+              "type": "number"
+            },
+            {
+              "id": "1a544831-8f16-4501-a978-eaad74d613b9",
+              "name": "accion",
+              "value": "={{ $('Webhook').item.json.body.accion }}",
+              "type": "string"
+            },
+            {
+              "id": "81339640-1c78-4983-abc4-cbc57ab4c925",
+              "name": "abuso_score",
+              "value": "={{ $json.data.abuseConfidenceScore }}",
+              "type": "number"
+            },
+            {
+              "id": "b4d1cd7c-1b23-4136-af88-841789c438e4",
+              "name": "pais",
+              "value": "={{ $json.data.countryCode }}",
+              "type": "string"
+            },
+            {
+              "id": "47714471-4b85-4553-80a0-3b903f941841",
+              "name": "total_reportes",
+              "value": "={{ $json.data.totalReports }}",
+              "type": "number"
+            },
+            {
+              "id": "29b6a6c2-5746-42fb-bf52-18e5e6ac7527",
+              "name": "isp",
+              "value": "={{ $json.data.isp }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        480,
+        48
+      ],
+      "id": "649b7a51-cd38-4f84-b5c0-f617a58fa652",
+      "name": "Edit Fields1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert rows in a table": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "c6e40a62-bd9a-4903-8be5-4a0357b6012f",
+  "meta": {
+    "instanceId": "6b5e1c5781d3b16dcb65865042865873e1ca87b5c934bbbd4ea1a3cb59b04685"
+  },
+  "id": "Y82GApBNjnMUXxVt",
+  "tags": []
+}

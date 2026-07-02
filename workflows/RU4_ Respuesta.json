@@ -1,0 +1,360 @@
+{
+  "name": "RU-4: Respuesta",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "callback_query",
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -240,
+        -352
+      ],
+      "id": "7b6da61c-8189-4142-994e-072e098dba53",
+      "name": "Telegram Trigger",
+      "webhookId": "365bee1c-d250-4607-a99f-79b9b1e82cec",
+      "credentials": {
+        "telegramApi": {
+          "id": "ueALl70pnW6cEnaT",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.callback_query.data }}",
+                    "rightValue": "ignorar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "9a4dd184-9a11-4e81-aecd-77ff4ece2054"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "62ff3f50-efcf-4e25-ba50-1d0a85eb23c3",
+                    "leftValue": "={{ $json.callback_query.data }}",
+                    "rightValue": "bloquear_",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        112,
+        -512
+      ],
+      "id": "f92565e3-81d3-4628-b59c-94c723a208f0",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.callback_query.from.id }}",
+        "text": "✅ Alerta descartada. Falso positivo registrado.",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        320,
+        -608
+      ],
+      "id": "e2a470e6-1dda-4d79-8b13-f95f662b96cb",
+      "name": "Send a text message1",
+      "webhookId": "467181fc-a387-4012-aa6f-217eb7fe635f",
+      "credentials": {
+        "telegramApi": {
+          "id": "ueALl70pnW6cEnaT",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ddae5c2e-5aff-49f5-b82e-34b5c34c4c1a",
+              "name": "ip_atacante",
+              "value": "={{ $json.callback_query.data.replace('bloquear_', '') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        320,
+        -416
+      ],
+      "id": "17c4cab4-e246-4f9e-b230-362865c6d453",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "command": "=sudo iptables -A INPUT -s {{ $json.ip_atacante }} -j DROP"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        608,
+        -416
+      ],
+      "id": "91108513-4055-4aa9-bb8f-961009ab3fbb",
+      "name": "Execute a command",
+      "credentials": {
+        "sshPassword": {
+          "id": "N4xM2ScazoJEiBWV",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "eb41e8c0-7c40-4f3b-9991-0ca382e05cf1",
+              "leftValue": "={{ $json.callback_query?.data }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -64,
+        -352
+      ],
+      "id": "914b37e1-b1b7-47c7-8d52-13cea24f2f54",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "74b57495-5a03-47bb-b962-27ccb4e23300",
+              "leftValue": "=={{ $json.message.text }}",
+              "rightValue": "start",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        128,
+        -208
+      ],
+      "id": "9f37814c-a83a-4f1b-beda-11dfac56de73",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO analistas_registrados (chat_id, nombre)\nVALUES ({{ $json.message.from.id }}, '{{ $json.message.from.first_name }}')\nON CONFLICT (chat_id) DO UPDATE SET nombre = EXCLUDED.nombre\nRETURNING chat_id, nombre;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        -224
+      ],
+      "id": "d8a58581-5722-4526-960a-5375756a4f24",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "hvF0mMMeucd1yw23",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+        "text": "=✅ Registro exitoso. Bienvenido al SIEM, $('Telegram Trigger').item.json.message.from.first_name.\n",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        624,
+        -224
+      ],
+      "id": "52dfe08f-8ac6-494a-a415-447fa9dc926e",
+      "name": "Send a text message2",
+      "webhookId": "0c50be9c-60cd-4655-9257-145ed6daabcb",
+      "credentials": {
+        "telegramApi": {
+          "id": "ueALl70pnW6cEnaT",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Send a text message1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Execute a command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Send a text message2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "90d04c0b-b013-43f8-8287-ea187901b699",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6b5e1c5781d3b16dcb65865042865873e1ca87b5c934bbbd4ea1a3cb59b04685"
+  },
+  "id": "wqVq52oRok7YPdB0",
+  "tags": []
+}

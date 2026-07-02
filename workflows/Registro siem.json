@@ -1,0 +1,154 @@
+{
+  "name": "Registro siem",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "40c69013-96b2-49a1-bb11-40c7877a8553",
+      "name": "Telegram Trigger",
+      "webhookId": "9c8b83d2-0999-4b37-9d5f-555adbe26c64",
+      "credentials": {
+        "telegramApi": {
+          "id": "ueALl70pnW6cEnaT",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "90f556b8-0990-49c0-98f4-72b50d43f9d7",
+              "leftValue": "={{ $json.message.text }}",
+              "rightValue": "/start",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        208,
+        0
+      ],
+      "id": "9104d325-a188-44fe-9ca4-1acbc27aebb8",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO analistas_registrados (chat_id, nombre)\nVALUES ({{ $json.message.from.id }}, '{{ $json.message.from.first_name }}')\nON CONFLICT (chat_id) DO UPDATE SET nombre = EXCLUDED.nombre;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        -96
+      ],
+      "id": "1ad39ec6-9a0b-4812-b8c8-bde425ff95b6",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "hvF0mMMeucd1yw23",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.message.from.id }}",
+        "text": "=✅ <b>Registro exitoso</b>  Hola {{ $json.message.from.first_name }}, quedaste registrado como analista SOC de este sistema SIEM.  A partir de ahora vas a recibir: - 📊 Reportes ejecutivos diarios a las 08:00 AM - 🚨 Alertas críticas del motor de Machine Learning  <i>Si otro analista necesita acceso, que le mande /start al bot.</i>",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        624,
+        -96
+      ],
+      "id": "7eb9dfbf-e596-49e4-985d-14a459dee8d9",
+      "name": "Send a text message",
+      "webhookId": "b62f4deb-a5d4-4000-9b5d-b4e95ac3cdbc",
+      "credentials": {
+        "telegramApi": {
+          "id": "ueALl70pnW6cEnaT",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "580ff066-ff22-4d67-a75f-a3a0100a97ee",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6b5e1c5781d3b16dcb65865042865873e1ca87b5c934bbbd4ea1a3cb59b04685"
+  },
+  "id": "bh2i3ItodEG9yT91",
+  "tags": []
+}

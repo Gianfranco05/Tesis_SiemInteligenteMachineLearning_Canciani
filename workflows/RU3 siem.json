@@ -1,0 +1,140 @@
+{
+  "name": "ru3 gian siem",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "7f610aa3-45f5-4312-b770-955bb756c1a6",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "url": "http://elasticsearch:9200/eventos-seguridad-*/_search?q=\"SPIKE_CPU\"",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "f1ef81d1-d8b8-4ae8-8f3a-8dfff294aa41",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "alertas_spikes_recursos",
+          "mode": "list",
+          "cachedResultName": "alertas_spikes_recursos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "detalle": "¡Alerta RU-3! Se detectó un pico inusual de consumo de CPU (Desviación > 3 sigma)"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "detalle",
+              "displayName": "detalle",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        0
+      ],
+      "id": "db84034a-5636-4283-b778-997a0ed17e40",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "hvF0mMMeucd1yw23",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "023b3f9a-b1e6-4c53-be68-fc8747670e0a",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6b5e1c5781d3b16dcb65865042865873e1ca87b5c934bbbd4ea1a3cb59b04685"
+  },
+  "id": "52gbE4CsfJt1ngCi",
+  "tags": []
+}

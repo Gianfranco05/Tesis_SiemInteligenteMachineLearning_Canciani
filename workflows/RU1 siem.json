@@ -1,0 +1,170 @@
+{
+  "name": "ru1 gian siem",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -32,
+        -16
+      ],
+      "id": "6c710555-204e-41b1-b317-411cade6ce80",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "url": "http://elasticsearch:9200/eventos-seguridad-*/_search?q=\"Fallo\"",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        160,
+        -16
+      ],
+      "id": "14f8491d-8e3e-4471-acac-2afdc6ab3382",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "alertas_fuerza_bruta",
+          "mode": "list",
+          "cachedResultName": "alertas_fuerza_bruta"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "detalle": "¡Alerta del SIEM! Se detectó un ataque de Fuerza Bruta SSH (RU-1)."
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "detalle",
+              "displayName": "detalle",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        368,
+        -16
+      ],
+      "id": "817fb680-a5c8-4f77-ae7e-2baaa74f12af",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "hvF0mMMeucd1yw23",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "=sudo iptables -A INPUT -s {{$node[\"HTTP Request\"].json[\"hits\"][\"hits\"][0][\"_source\"][\"source_ip\"]}} -j DROP"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [
+        576,
+        -16
+      ],
+      "id": "4746e90a-6920-4d5f-8867-df8cc0eeee98",
+      "name": "Execute a command",
+      "credentials": {
+        "sshPassword": {
+          "id": "N4xM2ScazoJEiBWV",
+          "name": "SSH Password account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert rows in a table": {
+      "main": [
+        [
+          {
+            "node": "Execute a command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "619de541-84a9-400f-a245-82bb2fda57a7",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6b5e1c5781d3b16dcb65865042865873e1ca87b5c934bbbd4ea1a3cb59b04685"
+  },
+  "id": "PI9ONpivtUoRChL2",
+  "tags": []
+}
