@@ -481,6 +481,18 @@ def enviar_alerta_a_n8n(
 # 9. PIPELINE COMPLETO
 # ══════════════════════════════════════════════
 
+# NUEVO — Deduplicación de alertas repetidas.
+# Sin esto, el motor re-alerta la MISMA ráfaga de ataque en cada ciclo
+# mientras siga dentro de la ventana de VENTANA_MIN minutos (por diseño,
+# el motor analiza "los últimos N minutos" en cada corrida, así que un
+# mismo evento aparece en varios ciclos consecutivos). Esto generaba
+# Telegrams duplicados y reglas DROP repetidas en iptables para el mismo
+# ataque. Este diccionario vive en memoria del proceso (se resetea si
+# se reinicia el contenedor, aceptable para este laboratorio) y recuerda
+# cuándo fue la última vez que se alertó cada IP.
+ultima_alerta_por_ip: dict[str, datetime] = {}
+
+
 def ejecutar_ciclo_ml() -> dict | None:
     """
     Ejecuta un ciclo completo del motor ML:
@@ -491,13 +503,14 @@ def ejecutar_ciclo_ml() -> dict | None:
       5. Correr DBSCAN
       6. Fusionar predicciones
       7. Calcular métricas
-      8. Enviar anomalías a n8n
+      8. Enviar anomalías a n8n (con deduplicación por IP)
     """
     print("\n" + "═" * 55)
     print(f"  🧠  MOTOR ML — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("═" * 55)
 
     # ── PASO 1: Conexión ──────────────────────────────────
+
     try:
         es = conectar_elasticsearch()
     except ConnectionError as e:
@@ -547,16 +560,42 @@ def ejecutar_ciclo_ml() -> dict | None:
 
     log.info(f"Procesando {len(indices_anomalos)} anomalías para enviar a n8n...")
 
-    # Enviamos solo la anomalía con el score más alto para no saturar el SOAR
-    # (en producción se implementaría una cola, ver Sección 7.1 de la tesis)
-    scores_anomalos = scores_if[indices_anomalos]
-    idx_peor        = indices_anomalos[np.argmin(scores_anomalos)]  # más negativo = más anómalo
+    # CORREGIDO: antes solo se consideraba la anomalía con peor score
+    # (idx_peor único), y si esa IP ya estaba en la ventana de
+    # deduplicación, el ciclo entero se cortaba sin revisar si había
+    # OTRAS IPs anómalas nuevas en la misma ventana. Esto podía dejar
+    # "tapada" una IP recién inyectada mientras la ráfaga de una
+    # iteración anterior siguiera siendo, por score, la más anómala.
+    # Ahora se recorren todos los candidatos ordenados de más a menos
+    # anómalo, y se alerta sobre el primero que NO esté ya deduplicado.
+    orden_por_severidad = indices_anomalos[np.argsort(scores_if[indices_anomalos])]  # más negativo primero
 
-    ip_detectada     = meta.iloc[idx_peor]["_source_ip"]
-    mensaje_detectado = meta.iloc[idx_peor]["_message"]
-    score_final      = round(abs(float(scores_if[idx_peor])), 4)
+    ahora = datetime.now()
+    idx_elegido = None
+    ip_detectada = None
+    for idx in orden_por_severidad:
+        ip_candidata = meta.iloc[idx]["_source_ip"]
+        ultima_vez = ultima_alerta_por_ip.get(ip_candidata)
+        if ultima_vez is not None and (ahora - ultima_vez) < timedelta(minutes=VENTANA_MIN):
+            continue  # esta IP ya fue alertada recientemente, probamos la siguiente
+        idx_elegido = idx
+        ip_detectada = ip_candidata
+        break
 
-    enviar_alerta_a_n8n(ip_detectada, score_final, mensaje_detectado, metricas)
+    if idx_elegido is None:
+        log.info(
+            f"Las {len(indices_anomalos)} anomalías de esta ventana ya fueron alertadas "
+            f"recientemente (dentro de los {VENTANA_MIN} min). Nada nuevo para enviar."
+        )
+        return metricas
+
+    mensaje_detectado = meta.iloc[idx_elegido]["_message"]
+    score_final      = round(abs(float(scores_if[idx_elegido])), 4)
+
+    enviado = enviar_alerta_a_n8n(ip_detectada, score_final, mensaje_detectado, metricas)
+    if enviado:
+        ultima_alerta_por_ip[ip_detectada] = ahora
+
 
     return metricas
 

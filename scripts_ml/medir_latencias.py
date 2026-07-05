@@ -44,7 +44,7 @@ import socket
 import time
 import random
 import psycopg2
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 LOGSTASH_HOST = os.getenv("LOGSTASH_HOST", "127.0.0.1")
 LOGSTASH_PORT = int(os.getenv("LOGSTASH_PORT", "5044"))
@@ -63,10 +63,25 @@ TIMEOUT_RESPUESTA = 300    # T1 -> T2: alerta Telegram + click humano + SSH + in
                            # (5 minutos: da tiempo real a revisar el celular)
 
 
+def _ahora_utc_naive():
+    """datetime naive en UTC, sin usar el método utcnow() (deprecado desde
+    Python 3.12). Necesitamos que sea naive (sin tzinfo) porque las
+    columnas de Postgres son TIMESTAMP WITHOUT TIME ZONE."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def ip_aleatoria():
     """IP distinta en cada iteración: evita que freq_ip se acumule entre
-    iteraciones y rompa la independencia estadística de las 30 muestras."""
-    return f"203.0.113.{random.randint(10, 250)}"
+    iteraciones y rompa la independencia estadística de las 30 muestras.
+
+    CORREGIDO: el rango anterior (203.0.113.10-250, solo 241 valores)
+    tenía ~84% de probabilidad de repetir alguna IP en 30 iteraciones.
+    Si una IP se repetía dentro de los 5 minutos de VENTANA_MIN, la
+    deduplicación de motor_ml.py (ver ultima_alerta_por_ip) suprimía la
+    alerta silenciosamente, y esa iteración daba timeout sin motivo
+    aparente. Ahora se usan dos octetos aleatorios (~64.500 IPs
+    posibles), con colisión <1% para 30 iteraciones."""
+    return f"203.0.{random.randint(1, 254)}.{random.randint(1, 254)}"
 
 
 def inyectar_incidente(ip):
@@ -89,15 +104,46 @@ def inyectar_incidente(ip):
         print(f"Error inyectando: {e}")
 
 
-def _first_timestamp_for_ip(cur, tabla, ip, desde):
+def _first_timestamp_for_ip(cur, tabla, ip, desde, columna_fecha="fecha", tolerancia_seg=5):
     """Devuelve el timestamp más antiguo de una fila en `tabla` para esa
-    IP con fecha >= desde, o None si todavía no existe."""
+    IP con fecha >= desde, o None si todavía no existe.
+
+    CORREGIDO: cada tabla usa un nombre distinto para su columna de
+    timestamp (alertas_ml usa "fecha", pero respuestas_aplicadas usa
+    "aplicada_en") — antes esto estaba hardcodeado a "fecha" para
+    cualquier tabla, y rompía con UndefinedColumn al consultar
+    respuestas_aplicadas.
+
+    NUEVO: se resta una pequeña tolerancia (5s por defecto) al filtro
+    de tiempo, no al valor de "desde" que se usa para el cálculo real
+    de MTTD/MTTR. Esto evita falsos timeouts si el reloj de tu PC
+    (donde corre este script) está levemente desincronizado respecto
+    al reloj de los contenedores Docker (donde Postgres genera los
+    timestamps) — un desfasaje de unos pocos segundos es común entre
+    el host Windows y el motor de Docker/WSL2, y sin esta tolerancia
+    una fila real podría quedar excluida por tener un timestamp
+    "anterior" a `desde` solo por ese desfasaje, no porque sea vieja.
+    """
+    desde_con_tolerancia = desde - timedelta(seconds=tolerancia_seg)
     cur.execute(
-        f"SELECT MIN(fecha) FROM {tabla} WHERE ip_origen = %s AND fecha >= %s",
-        (ip, desde),
+        f"SELECT MIN({columna_fecha}) FROM {tabla} WHERE ip_origen = %s AND {columna_fecha} >= %s",
+        (ip, desde_con_tolerancia),
     )
     row = cur.fetchone()
-    return row[0] if row and row[0] else None
+    if not row or not row[0]:
+        return None
+
+    valor = row[0]
+    # NUEVO: normalización naive/aware. Distintas tablas usan tipos de
+    # columna distintos (alertas_ml.fecha es TIMESTAMP sin tz, pero
+    # respuestas_aplicadas.aplicada_en es TIMESTAMPTZ con tz), así que
+    # psycopg2 devuelve objetos datetime "aware" para una y "naive" para
+    # la otra. Sin esto, restar t1 (naive) - t2 (aware) tira
+    # "can't subtract offset-naive and offset-aware datetimes". Acá
+    # siempre devolvemos naive en UTC, sin importar de qué tabla vino.
+    if valor.tzinfo is not None:
+        valor = valor.astimezone(timezone.utc).replace(tzinfo=None)
+    return valor
 
 
 def corrida_automatizada(n):
@@ -110,7 +156,7 @@ def corrida_automatizada(n):
     completadas = 0
     for it in range(1, n + 1):
         ip = ip_aleatoria()
-        t0 = datetime.now(timezone.utc)
+        t0 = _ahora_utc_naive()  # naive, consistente con TIMESTAMP (sin tz) de Postgres
         inyectar_incidente(ip)
         print(f"[auto {it}/{n}] Ataque inyectado desde {ip}. Esperando detección del "
               f"motor ML (hasta {TIMEOUT_DETECCION}s)...", end="", flush=True)
@@ -135,7 +181,7 @@ def corrida_automatizada(n):
         t2 = None
         limite = time.time() + TIMEOUT_RESPUESTA
         while time.time() < limite:
-            t2 = _first_timestamp_for_ip(cur, "respuestas_aplicadas", ip, t1)
+            t2 = _first_timestamp_for_ip(cur, "respuestas_aplicadas", ip, t1, columna_fecha="aplicada_en")
             if t2:
                 break
             time.sleep(2)
@@ -177,12 +223,12 @@ def corrida_manual(n):
     for it in range(1, n + 1):
         ip = ip_aleatoria()
         input(f"[manual {it}/{n}] Listo para inyectar. Presioná ENTER para empezar… ")
-        t0 = datetime.now(timezone.utc)
+        t0 = _ahora_utc_naive()
         inyectar_incidente(ip)
         input("  → Cuando lo DETECTES en Kibana con tus propios ojos, presioná ENTER (T1) ")
-        t1 = datetime.now(timezone.utc)
+        t1 = _ahora_utc_naive()
         input("  → Cuando decidas qué hacer y apliques el BLOQUEO, presioná ENTER (T2) ")
-        t2 = datetime.now(timezone.utc)
+        t2 = _ahora_utc_naive()
 
         cur.execute(
             """INSERT INTO experimento_latencias
