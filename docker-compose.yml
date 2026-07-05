@@ -148,7 +148,12 @@ services:
 
   # ── 8. VICTIMA SSH — Servidor de pruebas para RU-1 ──
   victima_ssh:
-    image: lscr.io/linuxserver/openssh-server:latest
+    # CORREGIDO: la imagen original lscr.io/linuxserver/openssh-server
+    # no trae iptables instalado ("sudo: iptables: command not found").
+    # Ahora se construye desde ./victima_ssh/Dockerfile, que extiende
+    # esa misma imagen agregando iptables de forma persistente.
+    build:
+      context: ./victima_ssh
     container_name: victima_ssh
     environment:
       - PUID=1000
@@ -157,6 +162,13 @@ services:
       - USER_PASSWORD=${SSH_PASSWORD}
       - PASSWORD_ACCESS=true
       - SUDO_ACCESS=true             # Necesario para ejecutar iptables
+    # NUEVO: sin esto, iptables tira "Permission denied (you must be
+    # root)" aunque el usuario ya sea root adentro del contenedor —
+    # Docker le saca estas capabilities a los contenedores por defecto,
+    # y hacen falta específicamente para poder tocar netfilter/iptables.
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
     ports:
       - "2222:2222"
     restart: unless-stopped
