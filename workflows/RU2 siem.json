@@ -2,19 +2,12 @@
   "name": "ru-2",
   "nodes": [
     {
-      "parameters": {},
-      "type": "n8n-nodes-base.manualTrigger",
-      "typeVersion": 1,
-      "position": [
-        0,
-        0
-      ],
-      "id": "c4105423-730c-4080-905d-5a8a925cc365",
-      "name": "When clicking ‘Execute workflow’"
-    },
-    {
       "parameters": {
-        "url": "http://elasticsearch:9200/eventos-seguridad-*/_search?q=\"EXITOSO\"",
+        "method": "POST",
+        "url": "http://elasticsearch:9200/eventos-seguridad-*/_search",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"query\": {\"bool\": {\"must\": [{\"match\": {\"rule.name\": \"RU-2\"}}, {\"range\": {\"@timestamp\": {\"gte\": \"now-1m\"}}}]}}, \"size\": 20, \"sort\": [{\"@timestamp\": {\"order\": \"desc\"}}]}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -38,7 +31,7 @@
           "conditions": [
             {
               "id": "f82ff226-15c4-4f53-b61a-33e5c4ad5c3f",
-              "leftValue": "={{DateTime.fromISO($json.hits.hits[0]._source[\"@timestamp\"]).hour}}",
+              "leftValue": "={{ $json.hits.hits[0]._source.hora_evento }}",
               "rightValue": 0,
               "operator": {
                 "type": "number",
@@ -47,7 +40,7 @@
             },
             {
               "id": "ddc0032b-a550-44dc-8b53-6df1b4d3647f",
-              "leftValue": "={{DateTime.fromISO($json.hits.hits[0]._source[\"@timestamp\"]).hour}}",
+              "leftValue": "={{ $json.hits.hits[0]._source.hora_evento }}",
               "rightValue": 6,
               "operator": {
                 "type": "number",
@@ -62,11 +55,11 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        416,
-        0
+        624,
+        96
       ],
       "id": "0ead3dfc-6609-44d3-9863-b2940748ec86",
-      "name": "If"
+      "name": "¿Es horario nocturno? (00-06h, hora_evento real)"
     },
     {
       "parameters": {
@@ -128,8 +121,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        624,
-        -96
+        832,
+        0
       ],
       "id": "f77d8dcd-b421-410a-89f2-1b1ef77040ed",
       "name": "Insert rows in a table",
@@ -139,11 +132,64 @@
           "name": "Postgres account"
         }
       }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c4105423-730c-4080-905d-5a8a925cc365",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6ac66ecb-496f-41b6-8b5c-21cb4cbe0221",
+              "leftValue": "={{ $json.hits.total.value }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        416,
+        96
+      ],
+      "id": "013ace55-c844-4f92-b237-a24cae513284",
+      "name": "¿Hay resultados?"
     }
   ],
   "pinData": {},
   "connections": {
-    "When clicking ‘Execute workflow’": {
+    "Schedule Trigger": {
       "main": [
         [
           {
@@ -158,14 +204,25 @@
       "main": [
         [
           {
-            "node": "If",
+            "node": "¿Hay resultados?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "If": {
+    "¿Hay resultados?": {
+      "main": [
+        [
+          {
+            "node": "¿Es horario nocturno? (00-06h, hora_evento real)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es horario nocturno? (00-06h, hora_evento real)": {
       "main": [
         [
           {
@@ -177,7 +234,7 @@
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",

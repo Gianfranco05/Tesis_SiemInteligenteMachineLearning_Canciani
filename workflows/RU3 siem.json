@@ -2,19 +2,12 @@
   "name": "ru3 gian siem",
   "nodes": [
     {
-      "parameters": {},
-      "type": "n8n-nodes-base.manualTrigger",
-      "typeVersion": 1,
-      "position": [
-        0,
-        0
-      ],
-      "id": "7f610aa3-45f5-4312-b770-955bb756c1a6",
-      "name": "When clicking ‘Execute workflow’"
-    },
-    {
       "parameters": {
-        "url": "http://elasticsearch:9200/eventos-seguridad-*/_search?q=\"SPIKE_CPU\"",
+        "method": "POST",
+        "url": "http://elasticsearch:9200/eventos-seguridad-*/_search",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"query\": {\"bool\": {\"must\": [{\"match\": {\"rule.name\": \"RU-3\"}}, {\"range\": {\"@timestamp\": {\"gte\": \"now-1m\"}}}]}}, \"size\": 20, \"sort\": [{\"@timestamp\": {\"order\": \"desc\"}}]}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -86,7 +79,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        416,
+        624,
         0
       ],
       "id": "db84034a-5636-4283-b778-997a0ed17e40",
@@ -97,11 +90,64 @@
           "name": "Postgres account"
         }
       }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "7f610aa3-45f5-4312-b770-955bb756c1a6",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c69465e1-d26c-452b-bae8-4505907f5e8f",
+              "leftValue": "={{ $json.hits.total.value }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "ffa51e07-5c52-4476-a000-c3c2d5b580ab",
+      "name": "¿Hay resultados?"
     }
   ],
   "pinData": {},
   "connections": {
-    "When clicking ‘Execute workflow’": {
+    "Schedule Trigger": {
       "main": [
         [
           {
@@ -116,6 +162,17 @@
       "main": [
         [
           {
+            "node": "¿Hay resultados?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay resultados?": {
+      "main": [
+        [
+          {
             "node": "Insert rows in a table",
             "type": "main",
             "index": 0
@@ -124,7 +181,7 @@
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",

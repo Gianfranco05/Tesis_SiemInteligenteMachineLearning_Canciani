@@ -2,12 +2,23 @@ import socket
 import time
 import random
 import requests
+import os
 from datetime import datetime
 
 # Configuración centralizada
-HOST = 'siem_logstash'
-PORT = 5044
-WEBHOOK_N8N = "http://siem_n8n:5678/webhook/alerta-ml"
+# CORREGIDO: antes HOST y WEBHOOK_N8N estaban hardcodeados a los nombres
+# de contenedor Docker (siem_logstash, siem_n8n), que no resuelven desde
+# tu PC (host), solo desde dentro de la red interna de Docker. Ahora son
+# configurables por variable de entorno, con default "localhost" pensado
+# para cuando corrés este script directamente desde tu PC (los puertos
+# 5044 y 5678 ya están publicados por docker-compose.yml).
+#
+# Si preferís correrlo DESDE DENTRO del contenedor siem_ml en vez de desde
+# tu PC, seteá las variables de entorno a los nombres de servicio:
+#   docker exec -e LOGSTASH_HOST=logstash -e WEBHOOK_N8N=http://n8n:5678/webhook/alerta-ml -it siem_ml python /app/simulador_ataques.py
+HOST = os.getenv("LOGSTASH_HOST", "localhost")
+PORT = int(os.getenv("LOGSTASH_PORT", "5044"))
+WEBHOOK_N8N = os.getenv("WEBHOOK_N8N", "http://localhost:5678/webhook/alerta-ml")
 
 def obtener_timestamp_syslog():
     # Genera la fecha en formato Syslog: "May 28 15:30:00"

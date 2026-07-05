@@ -39,3 +39,9 @@ CREATE TABLE IF NOT EXISTS respuestas_aplicadas (
 );
 
 CREATE INDEX IF NOT EXISTS idx_exp_grupo ON experimento_latencias (grupo);
+
+-- NUEVO: índice para que medir_latencias.py pueda hacer polling rápido
+-- por IP sobre alertas_ml y respuestas_aplicadas (antes no existía).
+CREATE INDEX IF NOT EXISTS idx_alertas_ml_ip_fecha ON alertas_ml (ip_origen, fecha);
+CREATE INDEX IF NOT EXISTS idx_respuestas_ip_fecha ON respuestas_aplicadas (ip_origen, aplicada_en);
+

@@ -121,7 +121,7 @@
     },
     {
       "parameters": {
-        "chatId": "7447493101",
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID_DEFAULT }}",
         "text": "=🚨 <b>ALERTA DE SEGURIDAD - IA</b> 🚨\n\n<b>Motor Matemático:</b> {{ $json.algoritmo }}\n<b>IP Atacante:</b> {{ $json.ip_origen }}\n<b>Nivel de Riesgo:</b> {{ $json.score_riesgo }}\n<b>Respuesta Automática:</b> {{ $json.accion }}\n\n🌐 <b>Inteligencia OSINT (AbuseIPDB):</b>\n- País de Origen: {{ $json.pais }}\n- Score de Abuso: {{ $json.abuso_score }}/100\n- Veces Reportada: {{ $json.total_reportes }}\n- ISP: {{ $json.isp }}",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
@@ -187,7 +187,7 @@
           "parameters": [
             {
               "name": "Key",
-              "value": "9723e84808b6756439933ea6d8bd9e35c10352ad0ad377eee14e93a474568a367a4d65c451c12d20"
+              "value": "={{ $env.ABUSEIPDB_KEY }}"
             },
             {
               "name": "Accept",

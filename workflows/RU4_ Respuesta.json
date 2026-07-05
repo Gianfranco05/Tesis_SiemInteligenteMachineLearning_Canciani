@@ -259,6 +259,48 @@
           "name": "Telegram account"
         }
       }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO respuestas_aplicadas (ip_origen, accion)\nVALUES ('{{ $json.ip_atacante }}', 'bloqueo_iptables')\nRETURNING id, ip_origen, aplicada_en;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        608,
+        -288
+      ],
+      "id": "fa5bb019-3d13-4748-a4c5-53fc45bab1ba",
+      "name": "Registrar Respuesta Real (T2)",
+      "credentials": {
+        "postgres": {
+          "id": "hvF0mMMeucd1yw23",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.callback_query.from.id }}",
+        "text": "=✅ IP {{ $json.ip_origen }} bloqueada exitosamente y registrada en auditoria (respuestas_aplicadas).",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        816,
+        -288
+      ],
+      "id": "4a9c5d4b-61e0-4a8e-939d-bf55fa185694",
+      "name": "Send a text message3",
+      "credentials": {
+        "telegramApi": {
+          "id": "ueALl70pnW6cEnaT",
+          "name": "Telegram account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -342,9 +384,31 @@
           }
         ]
       ]
+    },
+    "Execute a command": {
+      "main": [
+        [
+          {
+            "node": "Registrar Respuesta Real (T2)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Respuesta Real (T2)": {
+      "main": [
+        [
+          {
+            "node": "Send a text message3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",

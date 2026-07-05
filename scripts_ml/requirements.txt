@@ -1,4 +1,4 @@
-# requirements.txt — Dependencias del Motor ML
+# requirements.txt — Dependencias de TODO scripts_ml/
 # SIEM Inteligente | UTN FRM | Gianfranco Canciani
 #
 # Instalación:
@@ -6,6 +6,12 @@
 #
 # Desde el contenedor Docker:
 #   docker exec -it siem_ml pip install -r /app/requirements.txt
+#
+# CORREGIDO: antes solo listaba las dependencias de motor_ml.py.
+# Se agregaron psycopg2-binary, scipy y matplotlib, que usan
+# medir_latencias.py, medir_grupo_manual.py, verificar_pg.py y
+# analizar_experimento.py (antes había que instalarlas aparte,
+# a mano, según README_experimento.md).
 
 # Motor de Machine Learning
 scikit-learn>=1.3.0
@@ -19,3 +25,9 @@ numpy>=1.24.0
 
 # HTTP para webhooks a n8n
 requests>=2.31.0
+
+# Scripts de medición del experimento (MTTD/MTTR) y análisis estadístico
+psycopg2-binary>=2.9.0
+scipy>=1.11.0
+matplotlib>=3.7.0
+

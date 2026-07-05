@@ -1,3 +1,15 @@
+# ══════════════════════════════════════════════════════════
+# ⚠️  DEPRECADO — NO USAR
+# Este script es un prototipo temprano y ya NO es compatible con
+# config_logstash/logstash.conf actual: el formato de mensaje que
+# envía no matchea los patrones Grok vigentes (falta timestamp
+# syslog, falta 'sshd[pid]:', falta 'port N ssh2', etc), así que
+# Logstash lo indexa en la rama CATCH-ALL sin extraer source_ip.
+# Usá scripts_ml/simulador_ataques.py en su lugar (opción de menú
+# 1, 2 o 3, o la opción 6 'ESCENARIO TESIS' para el dataset 85/15).
+# Se conserva acá solo como registro histórico del proyecto.
+# ══════════════════════════════════════════════════════════
+
 import socket
 import time
 import random

@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 # ════════════════════════════════════════════════════════════════
 #  medir_grupo_manual.py
+#
+#  NOTA (corrección post-revisión): el script OFICIAL para generar los
+#  datos de la Sección 5.1.2 es medir_latencias.py (--grupo manual Y
+#  --grupo automatizado), porque mide ambos grupos con el mismo
+#  criterio y ahora también obtiene el T2 real del grupo automatizado
+#  desde respuestas_aplicadas. Este script (medir_grupo_manual.py) mide
+#  SOLO el grupo manual, con un mock de alerta más elaborado (incluye
+#  país/ISP/score simulados). Se conserva como alternativa opcional si
+#  querés una demo más vistosa del protocolo manual, pero para no tener
+#  dos fuentes de verdad, generá los 30x2 datos finales con
+#  medir_latencias.py y usá este solo si necesitás rehacer nada más
+#  que el grupo manual con el mock visual.
+#
 #  Mide el MTTR del grupo de CONTROL (analista humano).
 #
 #  QUÉ MIDE:

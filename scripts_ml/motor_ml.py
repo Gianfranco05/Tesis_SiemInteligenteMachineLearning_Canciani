@@ -45,13 +45,17 @@ from sklearn.metrics import (
 # ──────────────────────────────────────────────
 # CONFIGURACIÓN — variables de entorno o defaults
 # ──────────────────────────────────────────────
-# Cuando corrés desde tu PC: ES_HOST=http://localhost:9200
-# Cuando corrés desde dentro del contenedor siem_ml: ES_HOST=http://elasticsearch:9200
-ES_HOST = os.getenv("ES_HOST", "http://siem_elasticsearch:9200")
-WEBHOOK_URL  = os.getenv("WEBHOOK_URL",  "http://siem_n8n:5678/webhook/alerta-ml")
-LOOP_SECONDS = int(os.getenv("LOOP_SECONDS", "60"))   
+# CORREGIDO: el default ahora es "localhost", pensado para cuando el
+# script se corre directamente desde la PC (con los puertos publicados
+# por docker-compose). docker-compose.yml le pasa explícitamente
+# ES_HOST=http://elasticsearch:9200 y WEBHOOK_URL=http://siem_n8n:5678/...
+# al contenedor ml-python, así que DENTRO de Docker sigue usando los
+# nombres de servicio internos sin que haga falta tocar nada.
+ES_HOST = os.getenv("ES_HOST", "http://localhost:9200")
+WEBHOOK_URL  = os.getenv("WEBHOOK_URL",  "http://localhost:5678/webhook/alerta-ml")
+LOOP_SECONDS = int(os.getenv("LOOP_SECONDS", "30"))
 ES_INDEX     = os.getenv("ES_INDEX",     "eventos-seguridad-*")
-VENTANA_MIN  = int(os.getenv("VENTANA_MIN", "30"))    
+VENTANA_MIN  = int(os.getenv("VENTANA_MIN", "5"))
 
 # Hiperparámetros calibrados (tal como describe la tesis)
 IF_CONTAMINATION = 0.18   # proporción esperada de anomalías (~15% sintético + margen de seguridad)

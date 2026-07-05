@@ -2,19 +2,12 @@
   "name": "ru1 gian siem",
   "nodes": [
     {
-      "parameters": {},
-      "type": "n8n-nodes-base.manualTrigger",
-      "typeVersion": 1,
-      "position": [
-        -32,
-        -16
-      ],
-      "id": "6c710555-204e-41b1-b317-411cade6ce80",
-      "name": "When clicking ‘Execute workflow’"
-    },
-    {
       "parameters": {
-        "url": "http://elasticsearch:9200/eventos-seguridad-*/_search?q=\"Fallo\"",
+        "method": "POST",
+        "url": "http://elasticsearch:9200/eventos-seguridad-*/_search",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"query\": {\"bool\": {\"must\": [{\"match\": {\"rule.name\": \"RU-1\"}}, {\"range\": {\"@timestamp\": {\"gte\": \"now-1m\"}}}]}}, \"size\": 20, \"sort\": [{\"@timestamp\": {\"order\": \"desc\"}}]}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -86,7 +79,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        368,
+        576,
         -16
       ],
       "id": "817fb680-a5c8-4f77-ae7e-2baaa74f12af",
@@ -105,7 +98,7 @@
       "type": "n8n-nodes-base.ssh",
       "typeVersion": 1,
       "position": [
-        576,
+        784,
         -16
       ],
       "id": "4746e90a-6920-4d5f-8867-df8cc0eeee98",
@@ -116,11 +109,64 @@
           "name": "SSH Password account"
         }
       }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -32,
+        -16
+      ],
+      "id": "6c710555-204e-41b1-b317-411cade6ce80",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c5335be4-8cf2-4e1e-982d-2e5167631861",
+              "leftValue": "={{ $json.hits.total.value }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        368,
+        -16
+      ],
+      "id": "4f964c2a-aac0-4795-8293-2c05282a8aae",
+      "name": "¿Hay resultados?"
     }
   ],
   "pinData": {},
   "connections": {
-    "When clicking ‘Execute workflow’": {
+    "Schedule Trigger": {
       "main": [
         [
           {
@@ -132,6 +178,17 @@
       ]
     },
     "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "¿Hay resultados?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay resultados?": {
       "main": [
         [
           {
@@ -154,7 +211,7 @@
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",
