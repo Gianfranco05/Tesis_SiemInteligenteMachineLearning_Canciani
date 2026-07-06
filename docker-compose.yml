@@ -55,6 +55,23 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ── 2.5 KIBANA — Interfaz de exploración de Elasticsearch ──
+  # NUEVO: faltaba en el stack, a pesar de que la Sección 3.4 de la
+  # tesis describe al analista de control revisando los índices en
+  # Kibana. Sin este servicio, el protocolo del grupo manual no podía
+  # replicarse tal como está documentado.
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.1
+    container_name: siem_kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+
   # ── 3. SYSLOG-NG — Recolector de eventos de red ──
   syslog-ng:
     image: lscr.io/linuxserver/syslog-ng:latest
@@ -107,7 +124,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
     ports:
-      - "5433:5432"
+      - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       # Ejecuta TODOS los .sql de init_db/ en orden alfabético la primera
