@@ -31,3 +31,7 @@ figura1_boxplot_mttr.png
 figura2_histograma_mttd.png
 scripts_ml/figura1_boxplot_mttr.png
 scripts_ml/figura2_histograma_mttd.png
+
+# 7. Documento de tesis (binario grande, no versionar en el repo de código)
+*.pdf
+Correcciones_Pendientes_Tesis.docx

@@ -1,0 +1,8 @@
+# Forzar finales de línea LF (Unix) para scripts que corren dentro de
+# contenedores Linux, independientemente de la configuración de Git en
+# Windows (core.autocrlf). Sin esto, Git puede convertir estos archivos
+# a CRLF al clonar/checkout en Windows, rompiendo su ejecución dentro
+# de los contenedores (bash no entiende el \r como parte del comando).
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.conf text eol=lf

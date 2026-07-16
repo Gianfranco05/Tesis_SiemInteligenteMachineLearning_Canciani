@@ -76,9 +76,16 @@ services:
   syslog-ng:
     image: lscr.io/linuxserver/syslog-ng:latest
     container_name: siem_syslog
+    # NIVEL 2: config propia que reenvía el syslog de red a logstash:5044.
+    # syslog-ng corre como usuario no-root y escucha internamente en
+    # 5514/udp y 6601/tcp; mapeamos los puertos estándar externos hacia esos.
+    volumes:
+      - ./config_syslog-ng/syslog-ng.conf:/config/syslog-ng.conf:ro
     ports:
-      - "514:514/udp"
-      - "601:601/tcp"
+      - "514:5514/udp"
+      - "601:6601/tcp"
+    depends_on:
+      - logstash
     restart: unless-stopped
 
   # ── 4. N8N — Orquestador SOAR ──
@@ -124,7 +131,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       # Ejecuta TODOS los .sql de init_db/ en orden alfabético la primera
@@ -142,7 +149,7 @@ services:
     image: python:3.10-slim
     container_name: siem_ml
     environment:
-      - LOOP_SECONDS=30
+      - LOOP_SECONDS=5
       - VENTANA_MIN=5
       # NUEVO: nombres de servicio internos de Docker (antes dependía
       # del valor por defecto hardcodeado dentro de motor_ml.py).

@@ -38,6 +38,92 @@ defensa si te preguntan "¿qué corregiste y por qué?".
   esperando el script en cada momento (detección del motor ML vs. tu
   click en Telegram).
 
+## 🔵 Optimización post-experimento (ronda 2)
+
+### `docker-compose.yml`
+- `LOOP_SECONDS` del servicio `ml-python` pasó de `30` a `5`. La primera
+  corrida completa del experimento MTTD/MTTR (30+30 iteraciones, motor
+  ML con sondeo cada 30s) arrojó una mejora de solo 4.2% en MTTD —
+  estadísticamente significativa por el tamaño de muestra (Mann-Whitney
+  p=0.026) pero sin relevancia operativa. El análisis reveló que el
+  cuello de botella no era el algoritmo de detección sino la cadencia
+  de sondeo del motor: un evento podía esperar hasta 30s a que arrancara
+  el próximo ciclo antes de ser evaluado. Al bajar el intervalo a 5s y
+  remedir el grupo automatizado íntegramente, el MTTD cayó de 24.85s a
+  3.56s (reducción del 85.7%, Mann-Whitney U=900.0, p<0.00001).
+
+### `scripts_ml/analizar_experimento.py`
+- Sin cambios de código, pero se corrió de nuevo sobre el dataset final
+  (post-optimización de LOOP_SECONDS). Los números que reemplazan a los
+  de la corrida anterior: MTTR 11.67s → 5.64s (−51.6%, Mann-Whitney
+  U=849.0, p<0.00001, Welch t=6.67 df≈33 IC95%[4.19,7.86]s); MTTD 24.85s
+  → 3.56s (−85.7%, Mann-Whitney U=900.0, p<0.00001). Shapiro-Wilk mostró
+  no-normalidad en al menos un grupo para ambas métricas, por lo que el
+  test primario reportado es Mann-Whitney U (no paramétrico), no Welch.
+
+## 🟢 Validación con tráfico real (no simulado)
+
+### `config_logstash/logstash.conf`
+- El grok de RU-1 solo aceptaba el formato sintético que genera
+  `simulador_ataques.py` (syslog clásico con hostname y `sshd[pid]:`).
+  Se agregó un segundo patrón que además acepta el log NATIVO real de
+  `sshd` tal como lo emite el contenedor `victima_ssh` vía `s6-log`
+  (timestamp ISO de alta precisión, sin hostname ni pid, con "invalid
+  user X" opcional cuando el usuario no existe).
+
+### `victima_ssh/Dockerfile`, `victima_ssh/custom-cont-init.d/10-sudo-nopasswd.sh`
+- Ambos archivos tenían terminadores CRLF (probablemente introducidos
+  por Git en Windows sin `.gitattributes`), que rompían la ejecución
+  del script de NOPASSWD dentro del contenedor Alpine
+  (`$'\r': command not found`, `syntax error: unexpected end of
+  file`). Esto dejaba `sudo` pidiendo contraseña de nuevo — el mismo
+  bug que ya se había corregido antes — y habría hecho fallar
+  silenciosamente el bloqueo por iptables de RU-1 y RU-4. Se
+  convirtieron a LF y se agregó `.gitattributes` (`eol=lf` para
+  `*.sh`, `Dockerfile`, `*.conf`) para que no vuelva a pasar.
+
+### Validación end-to-end con ataque SSH real
+- Se ejecutó un ataque de fuerza bruta SSH **real** (no el simulador)
+  contra `victima_ssh:2222` usando `paramiko`, generando intentos
+  fallidos genuinos de `sshd`.
+- Se armó un reenviador (`tail -F /config/logs/openssh/current | nc
+  logstash 5044`) para llevar el log real, sin modificar, hasta
+  Logstash.
+- Cadena verificada de punta a punta con timestamps frescos: log real
+  de sshd → Logstash (grok matcheó como RU-1, no cayó en CATCH-ALL) →
+  Elasticsearch → n8n (Schedule Trigger detectó y consultó) →
+  PostgreSQL (`alertas_fuerza_bruta`, filas nuevas) → bloqueo real en
+  `iptables` de la IP de origen genuina (la del gateway de Docker,
+  `172.19.0.1`, vista por el contenedor).
+- Esto confirma que el pipeline no depende de las particularidades del
+  formato sintético del simulador: reconoce y responde a tráfico SSH
+  real de la misma manera.
+
+### `config_syslog-ng/syslog-ng.conf` (NUEVO) + `docker-compose.yml` — Nivel 2
+- El servicio `syslog-ng` existía pero estaba **huérfano**: sin config
+  propia y con un mapeo de puertos roto. La imagen `linuxserver/syslog-ng`
+  corre como usuario no-root y escucha internamente en `5514/udp` y
+  `6601/tcp`, pero el compose mapeaba `514:514` y `601:601` — es decir,
+  hacia puertos donde **nada escuchaba**.
+- Se creó `config_syslog-ng/syslog-ng.conf` (montada como volumen `:ro`)
+  que recibe syslog de red y lo **reenvía a `logstash:5044`** (TCP plano,
+  una línea por evento, template que reconstruye la línea syslog clásica
+  con `$ISODATE $HOST programa[pid]: mensaje`).
+- Se corrigió el mapeo del compose a `514:5514/udp` y `601:6601/tcp` (los
+  equipos de la red siguen apuntando a los puertos estándar 514/601) y se
+  agregó `depends_on: logstash`.
+- `keep-hostname(yes)` en las fuentes de red: conserva el hostname que la
+  máquina emisora pone en el mensaje (workstation01, router-borde, ...) en
+  vez de sobrescribirlo con la IP del emisor.
+- **Validación:** se enviaron 6 mensajes syslog orgánicos benignos
+  (systemd, dhcpd, sudo, nginx, CRON, kernel) por TCP/601 y UDP/514. Los 6
+  llegaron a Elasticsearch y **todos cayeron en CATCH-ALL** — cero falsos
+  positivos de RU-1/RU-2/RU-3 con tráfico real no malicioso, que era el
+  objetivo del Nivel 2.
+- Pendiente (no automatizable desde acá): apuntar el syslog de una máquina
+  física real de la red hacia el puerto 514/udp del host para generar
+  tráfico orgánico genuino sostenido.
+
 ## 🟠 Graves
 
 ### `workflows/RU1 siem.json`, `RU2 siem.json`, `RU3 siem.json`
