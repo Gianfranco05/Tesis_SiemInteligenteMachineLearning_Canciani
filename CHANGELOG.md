@@ -115,14 +115,37 @@ defensa si te preguntan "¿qué corregiste y por qué?".
 - `keep-hostname(yes)` en las fuentes de red: conserva el hostname que la
   máquina emisora pone en el mensaje (workstation01, router-borde, ...) en
   vez de sobrescribirlo con la IP del emisor.
-- **Validación:** se enviaron 6 mensajes syslog orgánicos benignos
-  (systemd, dhcpd, sudo, nginx, CRON, kernel) por TCP/601 y UDP/514. Los 6
-  llegaron a Elasticsearch y **todos cayeron en CATCH-ALL** — cero falsos
-  positivos de RU-1/RU-2/RU-3 con tráfico real no malicioso, que era el
-  objetivo del Nivel 2.
-- Pendiente (no automatizable desde acá): apuntar el syslog de una máquina
-  física real de la red hacia el puerto 514/udp del host para generar
-  tráfico orgánico genuino sostenido.
+- **Validación (paso 1, tráfico sintético):** se enviaron 6 mensajes syslog
+  orgánicos benignos (systemd, dhcpd, sudo, nginx, CRON, kernel) por
+  TCP/601 y UDP/514. Los 6 llegaron a Elasticsearch y **todos cayeron en
+  CATCH-ALL** — cero falsos positivos de RU-1/RU-2/RU-3 con tráfico
+  sintético no malicioso.
+- **Validación (paso 2, máquina físicamente separada — cierre del Nivel 2):**
+  se creó una VM Ubuntu Server 24.04 en VirtualBox (red NAT), independiente
+  del stack Docker del SIEM, con `rsyslog` configurado para reenviar todo
+  su tráfico (`/etc/rsyslog.d/60-forward-to-siem.conf`, regla
+  `*.* @10.0.2.2:514`) al host donde corre `syslog-ng` en el puerto
+  514/UDP. Se generó un evento real con `logger` desde la VM y se verificó
+  en Kibana (Discover, índice `eventos-seguridad-*`) que llegó correctamente
+  a Elasticsearch: `rule.name: CATCH-ALL`, `event.category: unknown`,
+  `message` con el hostname real de la VM (`siem-cliente-real`). Esto
+  confirma que el pipeline de ingesta funciona con tráfico de red genuino,
+  originado en un sistema operativo separado del stack Docker, no solo con
+  datos inyectados por scripts dentro del mismo host — y sin generar
+  falsos positivos.
+- **Validación (paso 3, ataque real desde máquina externa):** usando la
+  misma VM, se lanzó un ataque de fuerza bruta SSH real (`sshpass` + `ssh`,
+  5 intentos con contraseña incorrecta) contra `victima_ssh:2222` a través
+  del reenviador de logs (`tail -F /config/logs/openssh/current | nc
+  logstash 5044`, ya validado en el Nivel 1). Cadena verificada de punta a
+  punta: intentos reales de `sshd` → Logstash (grok RU-1) → Elasticsearch
+  (5 hits, `rule.name: RU-1`, `source_ip: 172.19.0.1` — la IP del gateway
+  de Docker, esperable por el doble NAT VirtualBox+Docker) → n8n (Schedule
+  Trigger, alerta por Telegram recibida) → bloqueo real y automático
+  (`iptables -L INPUT` mostró `DROP` para `172.19.0.1`). A diferencia del
+  Nivel 1 (atacante = script corriendo en el mismo host Windows), acá el
+  atacante es un sistema operativo distinto en una red separada — el
+  escenario más realista validado en todo el proyecto.
 
 ## 🟠 Graves
 

@@ -1,8 +1,17 @@
-# Forzar finales de línea LF (Unix) para scripts que corren dentro de
-# contenedores Linux, independientemente de la configuración de Git en
-# Windows (core.autocrlf). Sin esto, Git puede convertir estos archivos
-# a CRLF al clonar/checkout en Windows, rompiendo su ejecución dentro
-# de los contenedores (bash no entiende el \r como parte del comando).
-*.sh text eol=lf
-Dockerfile text eol=lf
-*.conf text eol=lf
+# Forzar finales de línea LF (Unix) para TODO el texto del repo,
+# independientemente de la configuración de Git en Windows
+# (core.autocrlf). Sin esto, Git convierte estos archivos a CRLF al
+# hacer checkout en Windows, lo que rompe scripts que corren dentro de
+# contenedores Linux (bash no entiende el \r como parte del comando) y
+# además hace que `git status` muestre el archivo entero como
+# "modificado" sin que haya ningún cambio de contenido real.
+* text=auto eol=lf
+
+# Binarios: nunca tocar finales de línea
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.pdf binary
+*.docx binary
+*.sqlite binary

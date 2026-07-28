@@ -24,6 +24,7 @@ vería un tribunal en una demo en vivo.
 8. [Medir MTTD/MTTR reales (el experimento de la tesis)](#8-medir-mttdmttr-reales)
 9. [Troubleshooting — errores comunes](#9-troubleshooting--errores-comunes)
 10. [Apagar y resetear](#10-apagar-y-resetear)
+11. [Día de la defensa — checklist final](#11-día-de-la-defensa--checklist-final)
 
 ---
 
@@ -140,7 +141,7 @@ te va a pedir cambiarla al entrar).
 ```bash
 docker compose logs -f ml-python
 ```
-✅ Esperado, cada `LOOP_SECONDS` (30s por defecto), algo como:
+✅ Esperado, cada `LOOP_SECONDS` (5s por defecto), algo como:
 ```
 [INFO] Ciclo ML completado exitosamente. Eventos analizados: 0
 ```
@@ -276,7 +277,7 @@ python scripts_ml/simulador_ataques.py
 # opción 1 otra vez (15 eventos de la misma IP = freq_ip >= 5)
 ```
 
-**Paso B — Esperar al motor ML** (corre cada `LOOP_SECONDS`, 30s por defecto):
+**Paso B — Esperar al motor ML** (corre cada `LOOP_SECONDS`, 5s por defecto — se optimizó de 30s a 5s tras el experimento inicial, ver `CHANGELOG.md`):
 ```bash
 docker compose logs -f ml-python
 ```
@@ -436,6 +437,91 @@ docker compose down -v       # Apaga Y borra todos los datos (reset total, inclu
 Si hiciste `down -v`, la próxima vez que levantes el stack, PostgreSQL
 va a volver a correr los scripts de `init_db/` desde cero (tablas
 vacías) y vas a tener que volver a activar los workflows en n8n.
+
+---
+
+## 11. Día de la defensa — checklist final
+
+Esto es lo que efectivamente ya está validado con evidencia real (no solo
+simulada), y el orden recomendado para mostrarlo en vivo si el tribunal
+pide una demo. No hace falta mostrar los 3 niveles — con el primero y el
+Escenario Tesis alcanza; los otros son as respaldo si preguntan "¿esto solo
+funciona con datos armados a medida?".
+
+### 11.1 La noche/mañana anterior
+
+```bash
+docker compose up -d
+docker compose ps          # todo Up/Up (healthy)
+```
+
+Dejalo levantado un rato antes de la defensa — Elasticsearch y el motor
+ML tardan un par de minutos en estabilizarse la primera vez.
+
+Confirmá credenciales de n8n (Postgres/SSH/Telegram) siguen configuradas
+en los 7 workflows (Sección 5) y que `ngrok` (si lo usás) tiene una URL
+activa reflejada en `N8N_WEBHOOK_URL` del `.env` — el plan gratuito la
+cambia cada reinicio, es el error más tonto y más común el día de la
+demo.
+
+### 11.2 La demo principal: Escenario Tesis (Sección 7)
+
+```bash
+python scripts_ml/simulador_ataques.py
+# opción 6: ESCENARIO TESIS
+```
+
+Mostrá en este orden: conteo en Elasticsearch → filas nuevas en
+PostgreSQL (RU-1/2/3) → log del motor ML con Precisión/Recall/F1 →
+alerta con botones en Telegram → apretás "Bloquear IP" → fila nueva en
+`respuestas_aplicadas` → dashboard de Grafana con el pico de eventos.
+Ver el detalle completo en la Sección 7 de arriba.
+
+### 11.3 Si preguntan "¿y con tráfico real, no solo simulado?"
+
+Tenés evidencia real de esto, documentada en `CHANGELOG.md`
+("🟢 Validación con tráfico real"): se atacó el `sshd` **real** del
+contenedor `victima_ssh` con un cliente SSH genuino (no el simulador),
+y el ataque fue detectado y bloqueado de punta a punta. Para
+reproducirlo en vivo (opcional, más impresionante pero más pasos):
+
+```bash
+docker exec -d victima_ssh sh -c "tail -F -n 0 /config/logs/openssh/current | nc logstash 5044"
+ssh baduser@localhost -p 2222   # password incorrecta, repetir 3-4 veces
+# esperar ~65s
+docker exec -it siem_postgres psql -U admin -d tesis_siem -c "SELECT * FROM alertas_fuerza_bruta ORDER BY fecha DESC LIMIT 3;"
+docker exec -it victima_ssh sh -c "iptables -L INPUT -n"
+```
+
+También se validó que tráfico de red real/orgánico (no ataques) **no**
+dispara falsos positivos, vía `syslog-ng` (config en
+`config_syslog-ng/syslog-ng.conf`) — recibe en `514/udp` y `601/tcp` y
+reenvía a Logstash. Este nivel está funcional pero pendiente de una
+prueba final con una máquina físicamente distinta de la red (ver
+`CHANGELOG.md`, sección Nivel 2).
+
+### 11.4 Los números que vas a citar (ya finales, no van a cambiar)
+
+- **MTTD**: reducción del **85.7%** (24.85s manual → 3.56s automatizado)
+- **MTTR**: reducción del **51.6%** (11.67s manual → 5.64s automatizado)
+- Ambos con significancia estadística vía **Mann-Whitney U** (p<0.00001
+  en ambos casos) — se usó esta prueba no paramétrica en vez de Student/
+  Welch porque Shapiro-Wilk mostró no-normalidad en al menos un grupo
+  para cada métrica. Ver Sección 5.1.2 de la tesis para el detalle
+  completo (Welch se reporta como robustez adicional para MTTR).
+
+### 11.5 Antes de salir de tu casa
+
+- [ ] Rotaste la API key de AbuseIPDB (✅ ya hecho)
+- [ ] El documento de la tesis tiene aplicados todos los reemplazos de
+      `Correcciones_Pendientes_Tesis.docx` (abstract, objetivo específico,
+      metodología, Sección 5.1.2, Tabla 1, conclusiones 6.1, Anexos C/D/G)
+- [ ] Hiciste un Ctrl+F final en el documento buscando restos de números
+      viejos: `38%`, `19.06`, `10.75`, `t = 8.10`, `df ≈ 29.7`,
+      `período de dos semanas` — no debería aparecer ninguno
+- [ ] `git push` hecho, el repo de GitHub refleja el estado actual
+- [ ] Cargaste batería en el celular con Telegram — lo vas a necesitar
+      para la demo de RU-4/HITL
 
 ---
 
