@@ -25,6 +25,7 @@ vería un tribunal en una demo en vivo.
 9. [Troubleshooting — errores comunes](#9-troubleshooting--errores-comunes)
 10. [Apagar y resetear](#10-apagar-y-resetear)
 11. [Día de la defensa — checklist final](#11-día-de-la-defensa--checklist-final)
+12. [Probar con tráfico real desde una VM externa (Nivel 2)](#12-probar-con-tráfico-real-desde-una-vm-externa-nivel-2)
 
 ---
 
@@ -493,12 +494,17 @@ docker exec -it siem_postgres psql -U admin -d tesis_siem -c "SELECT * FROM aler
 docker exec -it victima_ssh sh -c "iptables -L INPUT -n"
 ```
 
-También se validó que tráfico de red real/orgánico (no ataques) **no**
-dispara falsos positivos, vía `syslog-ng` (config en
-`config_syslog-ng/syslog-ng.conf`) — recibe en `514/udp` y `601/tcp` y
-reenvía a Logstash. Este nivel está funcional pero pendiente de una
-prueba final con una máquina físicamente distinta de la red (ver
-`CHANGELOG.md`, sección Nivel 2).
+También está validado, con una máquina **físicamente separada** (una VM
+Ubuntu Server corriendo en VirtualBox, red aparte del stack Docker), que:
+tráfico orgánico real no dispara falsos positivos, y un ataque SSH real
+lanzado desde esa VM externa fue detectado y bloqueado automáticamente de
+punta a punta (RU-1 → Telegram → `iptables DROP`), sin ninguna
+intervención manual sobre el stack. Es el escenario más realista de todo
+el proyecto: el "atacante" es un sistema operativo distinto, en una red
+distinta, no un script corriendo en la misma PC que aloja el SIEM. Ver
+`CHANGELOG.md` ("🟢 Validación con tráfico real", paso 3) para el detalle,
+y la [Sección 12](#12-probar-con-tráfico-real-desde-una-vm-externa-nivel-2)
+de esta guía si querés reproducirlo en vivo.
 
 ### 11.4 Los números que vas a citar (ya finales, no van a cambiar)
 
@@ -522,6 +528,140 @@ prueba final con una máquina físicamente distinta de la red (ver
 - [ ] `git push` hecho, el repo de GitHub refleja el estado actual
 - [ ] Cargaste batería en el celular con Telegram — lo vas a necesitar
       para la demo de RU-4/HITL
+
+---
+
+## 12. Probar con tráfico real desde una VM externa (Nivel 2)
+
+Todo lo de las secciones 6 y 7 usa `simulador_ataques.py`, que inyecta
+texto con formato syslog directo por socket a Logstash — útil y válido,
+pero sigue corriendo en la misma PC que aloja el SIEM. Esta sección es
+para reproducir la prueba más fuerte del proyecto: tráfico y ataques
+**reales**, generados por un sistema operativo separado, en una red
+aparte, tal como llegaría de un equipo cliente real en producción.
+
+Ya la hicimos una vez (evidencia en `CHANGELOG.md`); esto es la guía para
+repetirla, por ejemplo el día de la defensa si el tribunal pide verlo en
+vivo.
+
+### 12.1 Requisitos
+
+- La VM `siem-cliente-real` ya creada en VirtualBox (Ubuntu Server 24.04,
+  red NAT, usuario `admin`).
+- Regla de Port Forwarding configurada: Host `2200` → Guest `22` (para
+  conectarte por SSH desde PowerShell en vez de la consola de VirtualBox).
+- El stack del SIEM levantado (`docker compose up -d`, ver Sección 3).
+
+### 12.2 Prender la VM y conectarte por SSH
+
+1. Abrí VirtualBox → seleccioná `siem-cliente-real` → **Start**.
+2. Esperá a que termine de bootear (~15-20s).
+3. Desde PowerShell, en tu PC:
+   ```powershell
+   ssh admin@127.0.0.1 -p 2200
+   ```
+
+Todo lo que sigue en esta sección se corre **dentro de esa sesión SSH**
+(la VM), salvo que se indique explícitamente "en PowerShell".
+
+### 12.3 Confirmar que rsyslog sigue reenviando al SIEM
+
+```bash
+cat /etc/rsyslog.d/60-forward-to-siem.conf
+```
+✅ Esperado: `*.* @10.0.2.2:514`
+
+```bash
+sudo systemctl status rsyslog
+```
+✅ Esperado: `active (running)`. Si no existe el archivo o el servicio no
+está activo, recreálo:
+
+```bash
+echo '*.* @10.0.2.2:514' | sudo tee /etc/rsyslog.d/60-forward-to-siem.conf
+sudo systemctl restart rsyslog
+```
+
+### 12.4 Confirmar que el reenviador del lado del SIEM sigue activo
+
+**En PowerShell, en tu PC** (no en la VM):
+
+```powershell
+docker exec victima_ssh ps aux
+```
+
+Buscá una línea con `tail -F /config/logs/openssh/current` y otra con
+`nc logstash 5044`. Si no aparecen (se cortan cada vez que reiniciás
+Docker, no son persistentes), recreálas:
+
+```powershell
+docker exec -d victima_ssh sh -c "tail -F /config/logs/openssh/current | nc logstash 5044"
+```
+
+### 12.5 Prueba A — Tráfico orgánico (sin ataque, solo confirmar que no hay falsos positivos)
+
+**En la VM:**
+```bash
+logger "Prueba real desde VM Ubuntu - $(date)"
+```
+
+**En Windows, en Kibana** (`http://localhost:5601` → Discover → índice
+`eventos-seguridad-*`):
+```
+message: "Prueba real desde VM Ubuntu"
+```
+Rango: "Last 15 minutes". ✅ Esperado: `rule.name: CATCH-ALL`,
+`event.category: unknown` — confirma que tráfico real no malicioso no
+dispara ninguna regla.
+
+### 12.6 Prueba B — Ataque SSH real (la demo fuerte)
+
+**En la VM**, instalá `sshpass` si no lo tenés (una sola vez):
+```bash
+sudo apt install sshpass -y
+```
+
+Lanzá el ataque de fuerza bruta:
+```bash
+for i in 1 2 3 4 5 6; do
+  sshpass -p "clave_incorrecta_$i" ssh -o StrictHostKeyChecking=no \
+    -o PreferredAuthentications=password -o PubkeyAuthentication=no \
+    admin@10.0.2.2 -p 2222 exit
+  sleep 2
+done
+```
+
+Esto ataca el puerto 2222 de tu PC, que Docker redirige al `sshd` real
+dentro de `victima_ssh`.
+
+**Verificar la cadena completa (en Windows/Kibana/PowerShell):**
+
+1. **Kibana** → Discover → `rule.name: "RU-1"`, últimos 15 minutos.
+   ✅ Esperado: varios hits con `source_ip: 172.19.0.1` (la IP del
+   gateway de Docker — es la que ve el contenedor por el doble NAT
+   VirtualBox+Docker; no vas a ver la IP interna de la VM tal cual, y
+   es esperable).
+2. **Telegram** → alerta de RU-4 (o directamente el bloqueo automático de
+   RU-1, según cómo esté configurado el flujo en ese momento).
+3. **PowerShell:**
+   ```powershell
+   docker exec victima_ssh iptables -L INPUT -n
+   ```
+   ✅ Esperado: una regla `DROP` nueva para `172.19.0.1`.
+
+Si los 3 puntos se cumplen, tenés la prueba más realista posible: un
+ataque genuino, desde un sistema operativo distinto, detectado y
+neutralizado sin intervención manual sobre el SIEM.
+
+### 12.7 Troubleshooting específico de la VM
+
+| Síntoma | Causa probable | Solución |
+|---|---|---|
+| `ssh admin@127.0.0.1 -p 2200` da `Connection aborted` en el banner | La VM está apagada, o el Port Forwarding está mal configurado | Confirmar que la VM esté "En ejecución"; revisar la regla en Settings → Red → Adaptador 1 → Avanzadas → Port Forwarding |
+| `sudo systemctl status ssh` dice `Unit ssh.service could not be found` | OpenSSH server no quedó instalado en la VM | `sudo apt update && sudo apt install openssh-server -y && sudo systemctl enable --now ssh` |
+| El mensaje de `logger` no aparece en Kibana | El reenviador `tail -F ... \| nc logstash 5044` no está corriendo dentro de `victima_ssh` (se corta con cada reinicio de Docker) | Ver paso 12.4 |
+| El ataque SSH no aparece como `RU-1` en Kibana | El reenviador de logs no está activo, o el grok de `logstash.conf` no matcheó | Ver paso 12.4; revisar `docker compose logs logstash` buscando `_grokparsefailure` |
+| No copiás y pegás en la consola de VirtualBox | Es la consola raw, sin Guest Additions | Usar SSH (Sección 12.2) en vez de la consola directa |
 
 ---
 

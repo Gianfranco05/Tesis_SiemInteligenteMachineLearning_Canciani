@@ -7,7 +7,7 @@
         "url": "http://elasticsearch:9200/eventos-seguridad-*/_search",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\"query\": {\"bool\": {\"must\": [{\"match\": {\"rule.name\": \"RU-3\"}}, {\"range\": {\"@timestamp\": {\"gte\": \"now-1m\"}}}]}}, \"size\": 20, \"sort\": [{\"@timestamp\": {\"order\": \"desc\"}}]}",
+        "jsonBody": "{\"query\": {\"bool\": {\"must\": [{\"term\": {\"rule.name.keyword\": \"RU-3\"}}, {\"range\": {\"@timestamp\": {\"gte\": \"now-1m\"}}}]}}, \"size\": 20, \"sort\": [{\"@timestamp\": {\"order\": \"desc\"}}]}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",

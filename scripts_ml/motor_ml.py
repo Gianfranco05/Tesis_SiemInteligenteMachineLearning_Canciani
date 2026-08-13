@@ -426,7 +426,37 @@ def calcular_metricas(
     print("=" * 55 + "\n")
 
     log.info(f"Métricas → Precision={precision:.3f} | Recall={recall:.3f} | F1={f1:.3f}")
+    guardar_metrica_csv(metricas)
     return metricas
+
+
+def guardar_metrica_csv(metricas: dict, archivo: str = "resultados_clasificacion.csv") -> None:
+    """
+    Agrega una fila con las métricas de esta corrida a un CSV acumulativo.
+    Con esto, después de repetir el 'Escenario Tesis' 30 veces, el CSV
+    tiene los 30 valores individuales de Precision/Recall/F1 necesarios
+    para calcular desviación estándar e intervalo de confianza al 95%
+    (Tabla 2 / Tabla J.3 de la tesis) en vez de solo reportar el rango.
+    No requiere PostgreSQL: queda en el mismo directorio donde se ejecuta
+    motor_ml.py.
+    """
+    import csv
+    from datetime import datetime, timezone
+
+    existe = os.path.isfile(archivo)
+    with open(archivo, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "timestamp", "precision", "recall", "f1_score",
+                "verdaderos_positivos", "falsos_positivos",
+                "falsos_negativos", "verdaderos_negativos",
+                "tasa_falsos_positivos",
+            ],
+        )
+        if not existe:
+            writer.writeheader()
+        writer.writerow({"timestamp": datetime.now(timezone.utc).isoformat(), **metricas})
 
 
 # ══════════════════════════════════════════════
