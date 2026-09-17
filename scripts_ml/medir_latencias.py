@@ -216,13 +216,13 @@ def corrida_automatizada(n):
         print("   el ON CONFLICT actualiza por número de iteración, no duplica filas.")
 
 
-def corrida_manual(n):
+def corrida_manual(n, etiqueta="manual_ciego"):
     conn = psycopg2.connect(**PG)
     cur = conn.cursor()
-    print("\n🧑‍💻 MODO MANUAL — vigilá Kibana. Pulsá ENTER al DETECTAR y otra vez al BLOQUEAR.\n")
+    print(f"\n🧑‍💻 MODO MANUAL (grupo='{etiqueta}') — vigilá Kibana. Pulsá ENTER al DETECTAR y otra vez al BLOQUEAR.\n")
     for it in range(1, n + 1):
         ip = ip_aleatoria()
-        input(f"[manual {it}/{n}] Listo para inyectar. Presioná ENTER para empezar… ")
+        input(f"[{etiqueta} {it}/{n}] Listo para inyectar. Presioná ENTER para empezar… ")
         t0 = _ahora_utc_naive()
         inyectar_incidente(ip)
         input("  → Cuando lo DETECTES en Kibana con tus propios ojos, presioná ENTER (T1) ")
@@ -237,7 +237,7 @@ def corrida_manual(n):
                ON CONFLICT (grupo, iteracion) DO UPDATE
                SET t0_inyeccion=EXCLUDED.t0_inyeccion, t1_deteccion=EXCLUDED.t1_deteccion,
                    t2_respuesta=EXCLUDED.t2_respuesta""",
-            ("manual", it, "fuerza_bruta", t0, t1, t2),
+            (etiqueta, it, "fuerza_bruta", t0, t1, t2),
         )
         conn.commit()
         mttd = (t1 - t0).total_seconds()
@@ -246,15 +246,21 @@ def corrida_manual(n):
 
     cur.close()
     conn.close()
-    print("✅ Grupo manual completo.")
+    print(f"✅ Grupo '{etiqueta}' completo.")
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--grupo", required=True, choices=["manual", "automatizado"])
     ap.add_argument("--n", type=int, default=30)
+    ap.add_argument("--etiqueta", default="manual_ciego",
+                     help="Nombre de grupo a usar en la tabla cuando --grupo=manual "
+                          "(default: manual_ciego). Usar uno distinto por cada analista "
+                          "nuevo, ej. manual_ciego2, manual_ciego3, para no pisar datos "
+                          "de sesiones anteriores. Recordá agregar el valor nuevo al "
+                          "CHECK constraint de la tabla antes de correr (ver guía).")
     args = ap.parse_args()
     if args.grupo == "automatizado":
         corrida_automatizada(args.n)
     else:
-        corrida_manual(args.n)
+        corrida_manual(args.n, args.etiqueta)

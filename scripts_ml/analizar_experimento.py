@@ -96,13 +96,26 @@ def main():
     plt.close(fig)
 
     # ── Figura 2: Histograma MTTD ─────────────────────────────────
+    # Bins calculados POR SEPARADO para cada grupo (ancho fijo de 2 s),
+    # ya que el manual (~8-37 s) y el automatizado (~1.5-6.5 s) ocupan
+    # rangos muy distintos: usar bins="auto" sobre la unión de ambos
+    # producía bins de ~5 s que agrupaban casi la mitad del grupo manual
+    # en un solo bin que cruzaba la mediana, distorsionando la lectura.
     cm, em = mttd["manual"], mttd["automatizado"]
+    ANCHO_BIN = 2.0
+    bins_cm = np.arange(np.floor(cm.min()), np.ceil(cm.max()) + ANCHO_BIN, ANCHO_BIN)
+    bins_em = np.arange(np.floor(em.min()), np.ceil(em.max()) + ANCHO_BIN, ANCHO_BIN)
+    med_cm, med_em = np.median(cm), np.median(em)
+
     fig, ax = plt.subplots(figsize=(7, 5))
-    bins = np.histogram_bin_edges(np.concatenate([cm, em]), bins="auto")
-    ax.hist(cm, bins=bins, alpha=0.6, label="Manual (control)",
+    ax.hist(cm, bins=bins_cm, alpha=0.6, label="Manual (control)",
             edgecolor="black", color="0.75")
-    ax.hist(em, bins=bins, alpha=0.6, label="Automatizado (SOAR)",
+    ax.hist(em, bins=bins_em, alpha=0.6, label="Automatizado (SOAR)",
             edgecolor="black", color="0.35")
+    ax.axvline(med_cm, color="0.4", linestyle="--", linewidth=1.5,
+               label=f"Mediana manual = {med_cm:.2f} s")
+    ax.axvline(med_em, color="black", linestyle=":", linewidth=1.5,
+               label=f"Mediana automatizado = {med_em:.2f} s")
     ax.set_xlabel("MTTD (segundos)")
     ax.set_ylabel("Frecuencia")
     ax.set_title("Figura 2. Histograma de distribución del MTTD")

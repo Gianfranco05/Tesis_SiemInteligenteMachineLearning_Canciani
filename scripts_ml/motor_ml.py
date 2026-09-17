@@ -52,6 +52,13 @@ from sklearn.metrics import (
 # al contenedor ml-python, así que DENTRO de Docker sigue usando los
 # nombres de servicio internos sin que haga falta tocar nada.
 ES_HOST = os.getenv("ES_HOST", "http://localhost:9200")
+# NUEVO (hardening 4.3): ES ahora exige TLS + auth (xpack.security.enabled).
+# ES_USER/ES_PASSWORD/ES_CA_CERT los pasa docker-compose.yml; en None
+# (correr el script fuera de Docker sin definirlas) el cliente cae de
+# nuevo al comportamiento sin TLS/auth de antes.
+ES_USER     = os.getenv("ES_USER")
+ES_PASSWORD = os.getenv("ES_PASSWORD")
+ES_CA_CERT  = os.getenv("ES_CA_CERT")
 WEBHOOK_URL  = os.getenv("WEBHOOK_URL",  "http://localhost:5678/webhook/alerta-ml")
 LOOP_SECONDS = int(os.getenv("LOOP_SECONDS", "30"))
 ES_INDEX     = os.getenv("ES_INDEX",     "eventos-seguridad-*")
@@ -64,6 +71,25 @@ IF_RANDOM_STATE  = 42
 DBSCAN_EPS        = 1.5   # distancia máxima de vecindad (calibrada sobre features escaladas)
 DBSCAN_MIN_SAMPLES = 3    # mínimo de eventos para formar un cluster
 DENSIDAD_UMBRAL_FREQ = 5  # freq_ip mínima para considerar una IP como ráfaga (regla determinística)
+
+# RU-6 — Movimiento Lateral (MITRE T1021.004): una misma IP origen autentica
+# con éxito contra N hosts internos DISTINTOS dentro de la ventana de análisis.
+# Regla determinística nueva, hermana de freq_ip, calibrada por separado
+# (ver scripts_ml/simular_ru6_30corridas.py y resultados_ru6_movimiento_lateral.md).
+# Barrido {2,3,4,5,6} sobre 15 corridas independientes: F1 prácticamente
+# plano en todo el rango (el tráfico orgánico simulado JAMÁS genera
+# hosts_distintos_ip>=2, porque cada generador orgánico usa un único
+# hostname fijo, así que ningún umbral de ese rango puede ser penalizado por
+# un falso positivo que el dataset sintético es estructuralmente incapaz de
+# producir). Por eso el valor NO se fija por el desempate estadístico del
+# barrido (que daría 2, el mínimo del empate): se fija por CRITERIO DE
+# DISEÑO en 3, porque un umbral de 2 marcaría como movimiento lateral
+# cualquier IP que autentique con éxito contra apenas 2 hosts -- en un
+# entorno real eso incluye rondas de mantenimiento legítimas de un mismo
+# operador. Patrones reales de reconocimiento/pivoteo típicamente tocan 3+
+# hosts en poco tiempo. Ver resultados_ru6_movimiento_lateral.md
+# secciones 4.1/5.1 para el detalle del barrido y la justificación completa.
+DENSIDAD_UMBRAL_HOSTS = 3
 
 # ──────────────────────────────────────────────
 # LOGGING — produce trazas auditables
@@ -85,7 +111,12 @@ log = logging.getLogger("motor_ml")
 
 def conectar_elasticsearch() -> Elasticsearch:
     """Devuelve un cliente ES. Falla explícitamente si no hay conexión."""
-    es = Elasticsearch(ES_HOST, request_timeout=10)
+    es_kwargs = {"request_timeout": 10}
+    if ES_USER and ES_PASSWORD:
+        es_kwargs["basic_auth"] = (ES_USER, ES_PASSWORD)
+    if ES_CA_CERT:
+        es_kwargs["ca_certs"] = ES_CA_CERT
+    es = Elasticsearch(ES_HOST, **es_kwargs)
     if not es.ping():
         raise ConnectionError(
             f"No se pudo conectar a Elasticsearch en {ES_HOST}. "
@@ -141,6 +172,12 @@ def construir_features(logs: list[dict]) -> pd.DataFrame:
       - puerto:         número de puerto (22 = SSH habitual, otros = anómalos)
       - lon_mensaje:    longitud del campo message (proxy de entropía)
       - es_spike:       1 si el log contiene "SPIKE_CPU"
+      - hosts_distintos_ip: para eventos de login SSH exitoso, cuántos hosts
+        internos DISTINTOS autenticó con éxito la misma IP origen dentro de
+        esta ventana (0 si el evento no es un login exitoso). Señal para
+        RU-6 (movimiento lateral, MITRE T1021.004): un pivoteo típico
+        autentica contra varios hosts en pocos segundos, algo que el
+        tráfico orgánico no genera (siempre autentica contra el mismo host).
     """
     registros = []
 
@@ -183,6 +220,7 @@ def construir_features(logs: list[dict]) -> pd.DataFrame:
             "es_spike":       1 if "SPIKE_CPU" in mensaje else 0,
             # Guardamos campos originales fuera del DataFrame para el reporte
             "_source_ip":     doc.get("source_ip", ""),
+            "_hostname":      doc.get("hostname", "") or "",
             "_message":       mensaje[:120],
         })
 
@@ -200,6 +238,25 @@ def construir_features(logs: list[dict]) -> pd.DataFrame:
         df["freq_ip"] = df["_source_ip"].map(lambda ip: conteo_ip.get(ip, 1) if ip != "" else 1)
     else:
         df["freq_ip"] = 1
+
+    # FEATURE hosts_distintos_ip (RU-6, movimiento lateral): cuántos hosts
+    # internos DISTINTOS autenticó con éxito cada IP de origen en esta
+    # ventana. Solo tiene sentido para logins exitosos (es_exitoso_ssh==1);
+    # en el resto de los eventos vale 0. NO se agrega a las features del ML
+    # (cols_ml en separar_features) para no alterar el espacio de entrada
+    # de Isolation Forest/DBSCAN y así no afectar resultados ya publicados
+    # de RU-1/RU-2/RU-3: es puramente la entrada de una regla determinística
+    # nueva, fusionada por OR igual que freq_ip (ver fusionar_predicciones).
+    if len(df) > 0:
+        exitosos = df[(df["es_exitoso_ssh"] == 1) & (df["_source_ip"] != "")]
+        hosts_por_ip = exitosos.groupby("_source_ip")["_hostname"].nunique().to_dict()
+        df["hosts_distintos_ip"] = [
+            hosts_por_ip.get(row["_source_ip"], 1)
+            if (row["es_exitoso_ssh"] == 1 and row["_source_ip"] != "") else 0
+            for _, row in df.iterrows()
+        ]
+    else:
+        df["hosts_distintos_ip"] = 0
 
     return df
 
@@ -231,10 +288,17 @@ def generar_etiquetas_poc(df: pd.DataFrame) -> np.ndarray:
       - Fallo SSH: es_fallo_ssh == 1  (inyectado por RU-1)
       - Acceso nocturno exitoso: es_exitoso_ssh==1 AND hora entre 0-6
       - Spike de CPU: es_spike == 1
+      - Movimiento lateral (RU-6): es_exitoso_ssh==1 AND hosts_distintos_ip>=2
+        (una misma IP autenticando con éxito contra 2+ hosts internos
+        distintos en la ventana; el tráfico orgánico SIEMPRE autentica
+        contra el mismo host, así que este es un criterio estructural,
+        no el umbral de detección de la regla en producción, que se
+        calibra por separado -- ver DENSIDAD_UMBRAL_HOSTS)
 
     Todo lo demás = 0 (normal)
     """
     etiquetas = np.zeros(len(df), dtype=int)
+    tiene_hosts_distintos = "hosts_distintos_ip" in df.columns
 
     for i, row in df.iterrows():
         if row["es_fallo_ssh"] == 1:
@@ -242,6 +306,12 @@ def generar_etiquetas_poc(df: pd.DataFrame) -> np.ndarray:
         elif row["es_exitoso_ssh"] == 1 and row["hora_del_dia"] in range(0, 7):
             etiquetas[i] = 1
         elif row["es_spike"] == 1:
+            etiquetas[i] = 1
+        elif (
+            tiene_hosts_distintos
+            and row["es_exitoso_ssh"] == 1
+            and row["hosts_distintos_ip"] >= 2
+        ):
             etiquetas[i] = 1
 
     anomalias = int(etiquetas.sum())
@@ -337,26 +407,32 @@ def fusionar_predicciones(
     pred_if: np.ndarray,
     labels_dbscan: np.ndarray,
     freq_ip: np.ndarray = None,
+    hosts_distintos: np.ndarray = None,
 ) -> np.ndarray:
     """
-    Combina tres señales con lógica OR. Un evento es anómalo si AL MENOS UNA
-    de las siguientes lo marca:
+    Combina las señales disponibles con lógica OR. Un evento es anómalo si
+    AL MENOS UNA de las siguientes lo marca:
 
       1. Isolation Forest  -> outliers multidimensionales
       2. DBSCAN            -> ruido fuera de clusters densos
       3. Regla de densidad -> IPs con ráfaga de eventos (freq_ip >= umbral)
+      4. Regla RU-6        -> IP con login exitoso contra N hosts internos
+                               distintos (hosts_distintos_ip >= umbral),
+                               movimiento lateral MITRE T1021.004
 
-    La regla de densidad es determinística y complementa a los modelos no
-    supervisados: garantiza capturar ataques de fuerza bruta, donde una misma
-    IP genera muchos eventos idénticos en la ventana (un cluster denso que
-    Isolation Forest tiende a considerar "normal" por su propia densidad).
-    Este enfoque híbrido (modelos estadísticos + regla de correlación) replica
-    el funcionamiento de un SIEM real y estabiliza el recall en ~100%.
+    Las reglas de densidad y de movimiento lateral son determinísticas y
+    complementan a los modelos no supervisados: garantizan capturar patrones
+    que Isolation Forest/DBSCAN pueden considerar "normales" por su propia
+    densidad o baja dimensionalidad. Este enfoque híbrido (modelos
+    estadísticos + reglas de correlación) replica el funcionamiento de un
+    SIEM real y estabiliza el recall en ~100%.
 
     Esto da mayor cobertura (recall) a costa de algo de precisión, lo cual es
     preferible en seguridad: mejor alertar de más que perder una amenaza.
 
-    Devuelve array binario: 1 = anomalía final, 0 = normal
+    hosts_distintos es opcional (None = compatibilidad con llamadas previas
+    a RU-6, que no fusionan esta señal). Devuelve array binario: 1 = anomalía
+    final, 0 = normal.
     """
     anomalia_if     = (pred_if == -1).astype(int)
     anomalia_dbscan = (labels_dbscan == -1).astype(int)
@@ -366,12 +442,18 @@ def fusionar_predicciones(
     else:
         anomalia_densidad = np.zeros_like(anomalia_if)
 
-    # OR de las tres señales
-    fusion = np.maximum.reduce([anomalia_if, anomalia_dbscan, anomalia_densidad])
+    if hosts_distintos is not None:
+        anomalia_lateral = (np.asarray(hosts_distintos) >= DENSIDAD_UMBRAL_HOSTS).astype(int)
+    else:
+        anomalia_lateral = np.zeros_like(anomalia_if)
+
+    # OR de las cuatro señales
+    fusion = np.maximum.reduce([anomalia_if, anomalia_dbscan, anomalia_densidad, anomalia_lateral])
 
     log.info(
         f"Fusión (OR): IF={anomalia_if.sum()} | DBSCAN={anomalia_dbscan.sum()} "
-        f"| Densidad={anomalia_densidad.sum()} | Total final={fusion.sum()}"
+        f"| Densidad={anomalia_densidad.sum()} | Lateral(RU-6)={anomalia_lateral.sum()} "
+        f"| Total final={fusion.sum()}"
     )
     return fusion
 
@@ -576,7 +658,11 @@ def ejecutar_ciclo_ml() -> dict | None:
     labels_dbscan = ejecutar_dbscan(X_escalado)
 
     # ── PASO 6: Fusión ────────────────────────────────────
-    prediccion_final = fusionar_predicciones(pred_if, labels_dbscan, freq_ip=X["freq_ip"].values)
+    prediccion_final = fusionar_predicciones(
+        pred_if, labels_dbscan,
+        freq_ip=X["freq_ip"].values,
+        hosts_distintos=df_completo["hosts_distintos_ip"].values,
+    )
 
     # ── PASO 7: Métricas reales ───────────────────────────
     metricas = calcular_metricas(etiquetas_gt, prediccion_final)

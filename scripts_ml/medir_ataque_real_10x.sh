@@ -14,7 +14,12 @@ VICTIMA_HOST="10.0.2.2"   # gateway NAT de VirtualBox hacia el host Windows (mis
 VICTIMA_SSH_PORT=2222
 VICTIMA_SSH_USER=admin
 VICTIMA_SSH_PASS=1234
-ES_URL="http://${VICTIMA_HOST}:9200"
+# NOTA (hardening 4.3, posterior a la corrida original n=10): Elasticsearch
+# ahora exige TLS + auth. Si volvés a correr este script, completá
+# ES_USER/ES_PASS (ver .env ELASTIC_PASSWORD) y usá https.
+ES_URL="https://${VICTIMA_HOST}:9200"
+ES_USER="elastic"
+ES_PASS="__COMPLETAR_ELASTIC_PASSWORD__"
 PG_HOST="${VICTIMA_HOST}"
 PG_PORT=5433
 PG_USER=admin
@@ -58,7 +63,7 @@ for i in $(seq 1 "$N"); do
     # term sobre rule.name.keyword (NO match sobre rule.name): rule.name es
     # texto analizado y el analizador estandar parte "RU-1" en tokens "ru"/"1",
     # asi que un match hace OR y tambien matchea RU-2, RU-3, etc. Ver log_M24.md.
-    RESP=$(curl -s -X POST "$ES_URL/eventos-seguridad-*/_search" \
+    RESP=$(curl -sk -u "${ES_USER}:${ES_PASS}" -X POST "$ES_URL/eventos-seguridad-*/_search" \
       -H 'Content-Type: application/json' \
       -d "{\"query\":{\"bool\":{\"must\":[{\"term\":{\"rule.name.keyword\":\"RU-1\"}},{\"range\":{\"@timestamp\":{\"gte\":\"$T0_ISO\"}}}]}},\"size\":1,\"sort\":[{\"@timestamp\":{\"order\":\"asc\"}}]}")
     T1=$(echo "$RESP" | grep -o '"@timestamp":"[^"]*"' | head -1 | cut -d'"' -f4)
@@ -78,13 +83,14 @@ for i in $(seq 1 "$N"); do
 
   MTTD="N/A"
   MTTR="N/A"
+  T1_EPOCH=""
   if [ -n "$T1" ]; then
     T1_EPOCH=$(date -u -d "$T1" +%s 2>/dev/null)
     [ -n "$T1_EPOCH" ] && MTTD=$((T1_EPOCH - T0_EPOCH))
   fi
-  if [ -n "$T2" ]; then
+  if [ -n "$T2" ] && [ -n "$T1_EPOCH" ]; then
     T2_EPOCH=$(date -u -d "$T2" +%s 2>/dev/null)
-    [ -n "$T2_EPOCH" ] && MTTR=$((T2_EPOCH - T0_EPOCH))
+    [ -n "$T2_EPOCH" ] && MTTR=$((T2_EPOCH - T1_EPOCH))
   fi
 
   echo "  T1 (deteccion) = $T1   ->  MTTD = ${MTTD}s"

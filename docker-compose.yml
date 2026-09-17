@@ -29,15 +29,24 @@ services:
     container_name: siem_elasticsearch
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=false
+      # NUEVO (hardening 4.3): TLS + autenticación nativa en Elasticsearch.
+      # xpack.security.enabled=true habilita auth para TODOS los clientes
+      # (Kibana, motor_ml.py, Logstash, n8n) — no solo para la capa TLS.
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=true
+      - xpack.security.http.ssl.certificate=certs/es01.crt
+      - xpack.security.http.ssl.key=certs/es01.key
+      - xpack.security.http.ssl.certificate_authorities=certs/ca.crt
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     ports:
       - "9200:9200"
     volumes:
       - es_data:/usr/share/elasticsearch/data
+      - ./config_elasticsearch/certs:/usr/share/elasticsearch/config/certs:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:9200 >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -s -k -u elastic:${ELASTIC_PASSWORD} https://localhost:9200 >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -46,10 +55,19 @@ services:
   logstash:
     image: docker.elastic.co/logstash/logstash:8.11.1
     container_name: siem_logstash
+    environment:
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      # NUEVO: token HEC para el output duplicado hacia Splunk (comparación
+      # empírica motor propio vs. Splunk Free, ver docker-compose.splunk.yml).
+      # Si SPLUNK_HEC_TOKEN no está seteado o Splunk no está levantado, este
+      # output solo falla en sus propios reintentos, sin afectar los outputs
+      # de Elasticsearch/Wazuh.
+      - SPLUNK_HEC_TOKEN=${SPLUNK_HEC_TOKEN:-}
     ports:
       - "5044:5044"
     volumes:
       - ./config_logstash:/usr/share/logstash/pipeline
+      - ./config_elasticsearch/certs:/usr/share/logstash/config/certs:ro
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -64,7 +82,14 @@ services:
     image: docker.elastic.co/kibana/kibana:8.11.1
     container_name: siem_kibana
     environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_HOSTS=https://elasticsearch:9200
+      # NOTA: Kibana rechaza el usuario "elastic" (superusuario) por
+      # diseño de xpack; usa el built-in "kibana_system" en su lugar.
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=${KIBANA_SYSTEM_PASSWORD}
+      - ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES=/usr/share/kibana/config/certs/ca.crt
+    volumes:
+      - ./config_elasticsearch/certs:/usr/share/kibana/config/certs:ro
     ports:
       - "5601:5601"
     depends_on:
@@ -95,7 +120,9 @@ services:
     ports:
       - "5678:5678"
     environment:
-      - N8N_BASIC_AUTH_ACTIVE=false
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
       - WEBHOOK_URL=${N8N_WEBHOOK_URL}
       - N8N_PROTOCOL=http
       - NODE_TLS_REJECT_UNAUTHORIZED=0
@@ -104,6 +131,14 @@ services:
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       - ABUSEIPDB_KEY=${ABUSEIPDB_KEY}
       - TELEGRAM_CHAT_ID_DEFAULT=${TELEGRAM_CHAT_ID_DEFAULT}
+      # NUEVO (hardening 4.3): los nodos HTTP Request que consultan ES
+      # directo (RU-1/RU-2/RU-3) ahora necesitan credenciales, ES exige
+      # xpack.security.enabled=true.
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      # NUEVO (A-32, Anexo G): TTL en horas para el workflow "RU-4:
+      # Revocacion de Bloqueos" — pasadas TTL_HORAS desde aplicada_en,
+      # se elimina la regla iptables y se marca revertida_en.
+      - TTL_HORAS=${TTL_HORAS:-24}
     depends_on:
       - postgres
     volumes:
@@ -114,12 +149,19 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: siem_grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
     ports:
       - "3000:3000"
     depends_on:
       - elasticsearch
     volumes:
       - grafana_data:/var/lib/grafana
+      # NUEVO (hardening 4.3): Grafana tiene un datasource ES provisionado
+      # que también necesita TLS + auth ahora que xpack.security está
+      # activo (ver resultados_hardening_seguridad.md).
+      - ./config_elasticsearch/certs:/etc/grafana/certs:ro
     restart: unless-stopped
 
   # ── 6. POSTGRESQL — Auditoría inmutable e historial de incidentes ──
@@ -153,7 +195,10 @@ services:
       - VENTANA_MIN=5
       # NUEVO: nombres de servicio internos de Docker (antes dependía
       # del valor por defecto hardcodeado dentro de motor_ml.py).
-      - ES_HOST=http://elasticsearch:9200
+      - ES_HOST=https://elasticsearch:9200
+      - ES_USER=elastic
+      - ES_PASSWORD=${ELASTIC_PASSWORD}
+      - ES_CA_CERT=/certs/ca.crt
       - WEBHOOK_URL=http://siem_n8n:5678/webhook/alerta-ml
     # CAMBIO: antes quedaba en "tail -f /dev/null" (requería docker exec
     # manual). Ahora instala dependencias y arranca el motor en modo
@@ -168,6 +213,79 @@ services:
         condition: service_healthy
     volumes:
       - ./scripts_ml:/app
+      - ./config_elasticsearch/certs:/certs:ro
+    restart: unless-stopped
+
+  # ── 9. WAZUH-MANAGER — Comparación cuantitativa RU-1 (Anexo comparativo) ──
+  # Modo liviano: SOLO el manager, sin wazuh-dashboard ni wazuh-indexer
+  # propios (indexer/vulnerability-detection deshabilitados en ossec.conf,
+  # ver config_wazuh/ossec.conf). Se agrega exclusivamente para correr el
+  # Escenario Tesis (30 corridas) en paralelo a nuestro motor y comparar
+  # Precisión/Recall/F1/FPR sobre RU-1 (fuerza bruta SSH) contra su
+  # detección nativa (reglas 5710/5760 -> 5712/5763 del ruleset por
+  # defecto). No participa del pipeline SOAR/n8n ni de Elasticsearch.
+  wazuh-manager:
+    image: wazuh/wazuh-manager:4.13.0
+    container_name: siem_wazuh_manager
+    # SIN publicar puertos al host: Logstash le habla por la red interna
+    # de Docker ("wazuh-manager:514"). El host 514/udp ya está tomado por
+    # syslog-ng ("514:5514/udp" más abajo), así que NO se mapea acá para
+    # evitar el conflicto de puerto.
+    volumes:
+      - ./config_wazuh/ossec.conf:/var/ossec/etc/ossec.conf:ro
+      - ./config_wazuh/local_rules.xml:/var/ossec/etc/rules/local_rules.xml:ro
+      # Bind mount de logs/alertas: permite leer alerts.json directo desde
+      # el host para el análisis de las 30 corridas (Paso 4/5), sin depender
+      # de la API REST de Wazuh.
+      - ./config_wazuh/logs:/var/ossec/logs
+    restart: unless-stopped
+
+  # ── 8. PANEL BACKEND — Flask que expone /api/* para /pruebas ──
+  # Se monta front/server + scripts_ml para reutilizar simulador_ataques.py
+  # tal cual (sin reimplementar). Host 0.0.0.0 para que el front (browser)
+  # pueda pegarle vía localhost:5055 publicado.
+  panel-backend:
+    image: python:3.10-slim
+    container_name: siem_panel_backend
+    environment:
+      - PANEL_PRUEBAS_HOST=0.0.0.0
+      - PANEL_PRUEBAS_PORT=5055
+      - LOGSTASH_HOST=logstash
+      - LOGSTASH_PORT=5044
+      - WEBHOOK_N8N=http://n8n:5678/webhook/alerta-ml
+      - N8N_HOST=n8n
+      - N8N_PORT=5678
+    ports:
+      - "5055:5055"
+    volumes:
+      - ./front/server:/app
+      - ./scripts_ml:/scripts_ml:ro
+    working_dir: /app
+    command: >
+      sh -c "pip install -r requirements.txt -q &&
+             python app.py"
+    depends_on:
+      - logstash
+      - n8n
+    restart: unless-stopped
+
+  # ── 8.1 PANEL FRONT — Vite dev server para la landing ──
+  panel-front:
+    image: node:20-alpine
+    container_name: siem_front
+    working_dir: /app
+    environment:
+      - VITE_API_URL=http://localhost:5055
+      - VITE_KIBANA_URL=http://localhost:5601
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./front:/app
+      - /app/node_modules
+    command: >
+      sh -c "npm install --silent && npm run dev -- --host 0.0.0.0 --port 5173"
+    depends_on:
+      - panel-backend
     restart: unless-stopped
 
   # ── 8. VICTIMA SSH — Servidor de pruebas para RU-1 ──

@@ -4,11 +4,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://elasticsearch:9200/eventos-seguridad-*/_search",
+        "url": "=https://elastic:{{ $env.ELASTIC_PASSWORD }}@elasticsearch:9200/eventos-seguridad-*/_search",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "{\"query\": {\"bool\": {\"must\": [{\"term\": {\"rule.name.keyword\": \"RU-3\"}}, {\"range\": {\"@timestamp\": {\"gte\": \"now-1m\"}}}]}}, \"size\": 20, \"sort\": [{\"@timestamp\": {\"order\": \"desc\"}}]}",
-        "options": {}
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
@@ -35,7 +37,7 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "detalle": "¡Alerta RU-3! Se detectó un pico inusual de consumo de CPU (Desviación > 3 sigma)"
+            "detalle": "=¡Alerta RU-3! Consumo de CPU por encima del umbral configurado ({{ $json.hits.hits[0]._source.cpu_usage }}%)"
           },
           "matchingColumns": [
             "id"

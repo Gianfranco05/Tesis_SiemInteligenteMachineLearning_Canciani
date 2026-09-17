@@ -35,3 +35,26 @@ scripts_ml/figura2_histograma_mttd.png
 # 7. Documento de tesis (binario grande, no versionar en el repo de código)
 *.pdf
 Correcciones_Pendientes_Tesis.docx
+
+# 8. Frontend (front/) - Node y backend del panel de pruebas
+front/node_modules/
+front/dist/
+front/.env
+front/server/__pycache__/
+front/server/venv/
+front/server/.venv/
+
+resultados_*.csv
+resultados_*.json
+resultados_*.md
+*.sql
+experimento_*.csv
+experimento_*.sql
+capturas/
+Claude outputs/
+config_elasticsearch/certs/
+config_logstash_instance2/
+scratch_*/
+*.png
+!figura3_arquitectura_corregida.png  # si querés esa sí
+backup_*.sql

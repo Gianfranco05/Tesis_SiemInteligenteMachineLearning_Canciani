@@ -4,11 +4,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://elasticsearch:9200/eventos-seguridad-*/_search",
+        "url": "=https://elastic:{{ $env.ELASTIC_PASSWORD }}@elasticsearch:9200/eventos-seguridad-*/_search",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "{\"query\": {\"bool\": {\"must\": [{\"term\": {\"rule.name.keyword\": \"RU-2\"}}, {\"range\": {\"@timestamp\": {\"gte\": \"now-1m\"}}}, {\"range\": {\"hora_evento\": {\"gte\": 0, \"lte\": 6}}}]}}, \"size\": 20, \"sort\": [{\"@timestamp\": {\"order\": \"desc\"}}]}",
-        "options": {}
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
